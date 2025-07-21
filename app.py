@@ -381,7 +381,7 @@ def render_step3():
             if selected_tags and st.session_state.project_title:
                 prompt = (f"초등학생 대상 GSPBL 프로젝트의 '지속적 탐구' 과정을 구체적으로 설계해줘.\n"
                           f"프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야.\n"
-                          f"다음과 같은 활동들을 포함해서, 각 단계별로 학생들이 무엇을 할지, 어떤 디지털 도구를 사용하면 좋을지 예시를 들어 상세한 과정안을 작성해줘.\n\n"
+                          f"다음과 같은 활동들을 포함해서, 각 단계별로 학생들이 무엇을 할지, 어떤 디지털 도구를 사용하면 좋을지 예시를 들어 간단한 과정안(1차시 : 40분)을 작성해줘.\n\n"
                           f"포함할 활동: {', '.join(selected_tags)}")
                 detailed_process = call_gemini(prompt)
                 st.session_state.sustained_inquiry = detailed_process
