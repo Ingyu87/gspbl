@@ -50,9 +50,9 @@ def load_json_data(filename):
 def load_standards_text(grade_group):
     """선택된 학년군의 성취기준 전체 텍스트를 불러옵니다."""
     filename_map = {
-        "1-2학년군": "1-2학년군_성취수준.json",
-        "3-4학년군": "3-4학년군_성취수준.json",
-        "5-6학년군": "5-6학년군_성취수준.json",
+        "1-2학년군": "1-2학년군_성취기준.json",
+        "3-4학년군": "3-4학년군_성취기준.json",
+        "5-6학년군": "5-6학년군_성취기준.json",
     }
     filename = filename_map.get(grade_group)
     if not filename: return ""
