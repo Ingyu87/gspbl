@@ -296,6 +296,8 @@ def render_step2():
                           f"--- {grade_group} 성취기준 내용 ---\n{standards_text[:4000]}")
                 
                 recommendations_text = call_gemini(prompt)
+                st.write("--- AI 원본 응답 ---")
+                st.write(recommendations_text) 
                 lines = recommendations_text.strip().split('\n')
                 recommendations = [line.strip() for line in lines if re.match(r'\[\d{1,2}[가-힣]{1,2}\d{2}-\d{2}\]', line.strip())]
                 st.session_state.ai_recommendations = recommendations
