@@ -117,7 +117,7 @@ def create_lesson_plan_images():
         "🧭 지속적 탐구": data.get('sustained_inquiry', ''),
         "📈 과정중심 평가": data.get('process_assessment', ''),
         "🗣️ 학생의 의사 & 선택권": "\n".join(data.get('student_voice_choice', [])),
-        "� 비평과 개선": data.get('critique_revision', ''),
+        "🔄 비평과 개선": data.get('critique_revision', ''),
         "🤔 성찰": data.get('reflection', '')
     }
 
@@ -294,6 +294,15 @@ def render_step1():
     )
     st.info("💡 **팁:** 결과물이 교실 밖으로 공개될 때, 학생들은 진짜 세상의 문제를 해결하고 있다는 책임감과 자부심을 느낍니다.")
 
+    with st.expander("🤖 AI로 '최종 산출물' 아이디어 얻기"):
+        if st.button("AI 제안 받기", key="product_ai"):
+            if st.session_state.project_title:
+                prompt = f"초등학생 대상 GSPBL 프로젝트를 위한 '최종 결과물 공개(Public Product)' 아이디어를 5가지 제안해줘. 이 프로젝트의 도전적 질문은 '{st.session_state.project_title}'이야. 학생들이 프로젝트 결과를 교실 밖 실제 세상과 공유할 수 있는 구체적이고 의미 있는 방법을 제안해줘. 번호 없이 한 줄씩만."
+                suggestions = call_gemini(prompt)
+                st.session_state.public_product = suggestions
+                st.rerun()
+            else:
+                st.warning("프로젝트 대주제를 먼저 입력해주세요.")
 
 def render_step2():
     st.header("🧭 STEP 2. 학습 나침반 준비하기")
