@@ -30,35 +30,72 @@ else:
     st.warning("Gemini API 키가 설정되지 않았습니다. AI 제안 기능을 사용하려면 앱 설정(Secrets)에 키를 추가하거나 코드에 직접 입력해주세요.")
 
 
-# --- 2. 데이터 로드 및 처리 함수 ---
+# --- 2. 데이터 로드 및 처리 함수 (수정된 버전) ---
 
 @st.cache_data
 def load_json_data(filename):
     """'data' 폴더에서 JSON 파일을 로드합니다."""
-    filepath = os.path.join('data', filename)
-    if not os.path.exists(filepath):
-        st.error(f"'{filepath}' 파일을 찾을 수 없습니다. 'data' 폴더 안에 있는지 확인해주세요.")
-        return None
     try:
+        filepath = os.path.join('data', filename)
+        if not os.path.exists(filepath):
+            st.error(f"'{filepath}' 파일을 찾을 수 없습니다. 'data' 폴더 안에 있는지 확인해주세요.")
+            return None
+        
         with open(filepath, 'r', encoding='utf-8-sig') as f:
-            return json.load(f)
+            data = json.load(f)
+            return data
+    except FileNotFoundError:
+        st.error(f"'{filename}' 파일을 찾을 수 없습니다.")
+        return None
+    except json.JSONDecodeError as e:
+        st.error(f"'{filename}' JSON 파싱 오류: {e}")
+        return None
     except Exception as e:
-        st.error(f"'{filepath}' 파일 로딩 중 오류: {e}")
+        st.error(f"'{filename}' 파일 로딩 중 예상치 못한 오류: {e}")
         return None
 
-@st.cache_data
 def load_standards_text(grade_group):
-    """선택된 학년군의 성취기준 전체 텍스트를 불러옵니다."""
-    filename_map = {
-        "1-2학년군": "1-2학년군_성취기준.json",
-        "3-4학년군": "3-4학년군_성취기준.json",
-        "5-6학년군": "5-6학년군_성취기준.json",
-    }
-    filename = filename_map.get(grade_group)
-    if not filename: return ""
+    """선택된 학년군의 성취기준 전체 텍스트를 불러옵니다. (안전성 강화)"""
+    try:
+        filename_map = {
+            "1-2학년군": "1-2학년군_성취기준.json",
+            "3-4학년군": "3-4학년군_성취기준.json",
+            "5-6학년군": "5-6학년군_성취기준.json",
+        }
+        
+        filename = filename_map.get(grade_group)
+        if not filename:
+            st.warning(f"'{grade_group}'에 해당하는 파일명을 찾을 수 없습니다.")
+            return ""
 
-    data = load_json_data(filename)
-    return data.get("content", "") if data else ""
+        data = load_json_data(filename)
+        if data is None:
+            return ""
+        
+        # 다양한 JSON 구조에 대응
+        if isinstance(data, dict):
+            # 'content' 키가 있는 경우
+            if 'content' in data:
+                return str(data['content'])
+            # 'data' 키가 있는 경우
+            elif 'data' in data:
+                return str(data['data'])
+            # 직접 텍스트가 있는 경우
+            elif 'text' in data:
+                return str(data['text'])
+            # 첫 번째 값이 문자열인 경우
+            else:
+                first_value = next(iter(data.values()), "")
+                return str(first_value) if first_value else ""
+        elif isinstance(data, str):
+            return data
+        else:
+            st.warning(f"'{filename}' 파일의 구조를 인식할 수 없습니다.")
+            return ""
+            
+    except Exception as e:
+        st.error(f"성취기준 텍스트 로딩 중 오류: {e}")
+        return ""
 
 # --- 3. AI 및 이미지 생성 함수 ---
 
@@ -80,98 +117,110 @@ def call_gemini(prompt, show_spinner=True):
 
 def create_lesson_plan_images():
     """세션 데이터를 바탕으로 2페이지 분량의 '수업 설계도' JPG 이미지를 생성합니다."""
-    data = st.session_state
-    
-    rows_page1 = {
-        "🎯 탐구 질문": data.get('project_title', ''),
-        "📢 최종 결과물 공개": data.get('public_product', ''),
-        "📚 교과 성취기준": "\n".join(data.get('selected_standards', [])),
-        "💡 핵심역량": "\n".join(f"• {c}" for c in data.get('selected_core_competencies', [])),
-        "🌱 사회정서 역량": "\n".join(f"• {c}" for c in data.get('selected_sel_competencies', [])),
-    }
-    
-    rows_page2 = {
-        "🧭 지속적 탐구": data.get('sustained_inquiry', ''),
-        "📈 과정중심 평가": data.get('process_assessment', ''),
-        "🗣️ 학생의 의사 & 선택권": "\n".join(data.get('student_voice_choice', [])),
-        "🔄 비평과 개선": data.get('critique_revision', ''),
-        "🤔 성찰": data.get('reflection', '')
-    }
-
-    images = []
-    for page_num, rows in enumerate([rows_page1, rows_page2], 1):
-        width, height = 1200, 1700
-        margin = 50
-        bg_color = (255, 255, 255)
-        header_bg_color = (230, 245, 255)
-        line_color = (200, 200, 200)
-
-        font_path = os.path.join('data', "Pretendard-Regular.ttf")
-        if not os.path.exists(font_path):
-            st.error(f"`{font_path}` 폰트 파일을 찾을 수 없습니다.")
-            return []
+    try:
+        data = st.session_state
         
-        try:
-            title_font = ImageFont.truetype(font_path, 40)
-            header_font = ImageFont.truetype(font_path, 28)
-            body_font = ImageFont.truetype(font_path, 22)
-        except IOError:
-            st.error(f"`{font_path}` 폰트 파일을 열 수 없습니다.")
-            return []
+        rows_page1 = {
+            "🎯 탐구 질문": data.get('project_title', ''),
+            "📢 최종 결과물 공개": data.get('public_product', ''),
+            "📚 교과 성취기준": "\n".join(data.get('selected_standards', [])),
+            "💡 핵심역량": "\n".join(f"• {c}" for c in data.get('selected_core_competencies', [])),
+            "🌱 사회정서 역량": "\n".join(f"• {c}" for c in data.get('selected_sel_competencies', [])),
+        }
+        
+        rows_page2 = {
+            "🧭 지속적 탐구": data.get('sustained_inquiry', ''),
+            "📈 과정중심 평가": data.get('process_assessment', ''),
+            "🗣️ 학생의 의사 & 선택권": "\n".join(data.get('student_voice_choice', [])),
+            "🔄 비평과 개선": data.get('critique_revision', ''),
+            "🤔 성찰": data.get('reflection', '')
+        }
 
-        img = Image.new('RGB', (width, height), color=bg_color)
-        draw = ImageDraw.Draw(img)
+        images = []
+        for page_num, rows in enumerate([rows_page1, rows_page2], 1):
+            width, height = 1200, 1700
+            margin = 50
+            bg_color = (255, 255, 255)
+            header_bg_color = (230, 245, 255)
+            line_color = (200, 200, 200)
 
-        def draw_multiline_text_in_box(text, font, box, text_color='black', h_align='left', v_align='top'):
-            x, y, w, h = box
-            lines = []
-            for line in text.split('\n'):
-                wrapped_lines = textwrap.wrap(line, width=int(w / (font.size * 0.55)), break_long_words=True)
-                lines.extend(wrapped_lines if wrapped_lines else [''])
-            
-            line_height = font.getbbox("A")[3] + 6
-            total_text_height = len(lines) * line_height
-            
-            y_text = y + 15
-            if v_align == 'center':
-                y_text = y + (h - total_text_height) / 2
-            
-            for line in lines:
-                line_width = draw.textlength(line, font=font)
-                x_text = x + 15
-                if h_align == 'center':
-                    x_text = x + (w - line_width) / 2
+            # 기본 폰트 사용 (Pretendard 폰트가 없는 경우 대비)
+            try:
+                font_path = os.path.join('data', "Pretendard-Regular.ttf")
+                if os.path.exists(font_path):
+                    title_font = ImageFont.truetype(font_path, 40)
+                    header_font = ImageFont.truetype(font_path, 28)
+                    body_font = ImageFont.truetype(font_path, 22)
+                else:
+                    # 기본 폰트 사용
+                    title_font = ImageFont.load_default()
+                    header_font = ImageFont.load_default()
+                    body_font = ImageFont.load_default()
+            except Exception as e:
+                st.warning(f"폰트 로딩 실패, 기본 폰트 사용: {e}")
+                title_font = ImageFont.load_default()
+                header_font = ImageFont.load_default()
+                body_font = ImageFont.load_default()
+
+            img = Image.new('RGB', (width, height), color=bg_color)
+            draw = ImageDraw.Draw(img)
+
+            def draw_multiline_text_in_box(text, font, box, text_color='black', h_align='left', v_align='top'):
+                x, y, w, h = box
+                lines = []
+                for line in text.split('\n'):
+                    wrapped_lines = textwrap.wrap(line, width=int(w / 12), break_long_words=True)  # 폰트 크기 고려 조정
+                    lines.extend(wrapped_lines if wrapped_lines else [''])
                 
-                if y_text + line_height < y + h + 15:
-                    draw.text((x_text, y_text), line, font=font, fill=text_color)
-                    y_text += line_height
-        
-        y_pos = margin
-        draw.rectangle([(margin, y_pos), (width - margin, y_pos + 80)], fill=header_bg_color, outline=line_color)
-        draw_multiline_text_in_box(f"GSPBL 수업 설계도 ({page_num}/2)", title_font, (margin, y_pos, width - margin*2, 80), h_align='center', v_align='center')
-        y_pos += 80 + 10
-
-        for header, content in rows.items():
-            lines = []
-            for line in content.split('\n'):
-                wrapped_lines = textwrap.wrap(line, width=65)
-                lines.extend(wrapped_lines if wrapped_lines else [''])
-            row_height = max(100, len(lines) * 30 + 40)
+                line_height = 30  # 고정 줄 높이
+                total_text_height = len(lines) * line_height
+                
+                y_text = y + 15
+                if v_align == 'center':
+                    y_text = y + (h - total_text_height) / 2
+                
+                for line in lines:
+                    x_text = x + 15
+                    if h_align == 'center':
+                        try:
+                            line_width = draw.textlength(line, font=font)
+                            x_text = x + (w - line_width) / 2
+                        except:
+                            x_text = x + w / 2 - len(line) * 6  # 대략적 계산
+                    
+                    if y_text + line_height < y + h + 15:
+                        draw.text((x_text, y_text), line, font=font, fill=text_color)
+                        y_text += line_height
             
-            if y_pos + row_height > height - margin:
-                row_height = height - margin - y_pos
+            y_pos = margin
+            draw.rectangle([(margin, y_pos), (width - margin, y_pos + 80)], fill=header_bg_color, outline=line_color)
+            draw_multiline_text_in_box(f"GSPBL 수업 설계도 ({page_num}/2)", title_font, (margin, y_pos, width - margin*2, 80), h_align='center', v_align='center')
+            y_pos += 80 + 10
 
-            draw.rectangle([(margin, y_pos), (margin + 300, y_pos + row_height)], fill=(245, 245, 245), outline=line_color)
-            draw_multiline_text_in_box(header, header_font, (margin, y_pos, 300, row_height), v_align='center')
-            draw.rectangle([(margin + 300, y_pos), (width - margin, y_pos + row_height)], fill='white', outline=line_color)
-            draw_multiline_text_in_box(content, body_font, (margin + 300, y_pos, width - margin*2 - 300, row_height))
-            y_pos += row_height
+            for header, content in rows.items():
+                lines = []
+                for line in content.split('\n'):
+                    wrapped_lines = textwrap.wrap(line, width=65)
+                    lines.extend(wrapped_lines if wrapped_lines else [''])
+                row_height = max(100, len(lines) * 30 + 40)
+                
+                if y_pos + row_height > height - margin:
+                    row_height = height - margin - y_pos
 
-        buffer = io.BytesIO()
-        img.save(buffer, format="JPEG", quality=95)
-        images.append(buffer.getvalue())
-        
-    return images
+                draw.rectangle([(margin, y_pos), (margin + 300, y_pos + row_height)], fill=(245, 245, 245), outline=line_color)
+                draw_multiline_text_in_box(header, header_font, (margin, y_pos, 300, row_height), v_align='center')
+                draw.rectangle([(margin + 300, y_pos), (width - margin, y_pos + row_height)], fill='white', outline=line_color)
+                draw_multiline_text_in_box(content, body_font, (margin + 300, y_pos, width - margin*2 - 300, row_height))
+                y_pos += row_height
+
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", quality=95)
+            images.append(buffer.getvalue())
+            
+        return images
+    except Exception as e:
+        st.error(f"이미지 생성 중 오류: {e}")
+        return []
 
 
 # --- 4. 세션 상태 초기화 ---
@@ -245,7 +294,6 @@ def render_step1():
     if st.session_state.question_analysis:
         st.info(st.session_state.question_analysis)
 
-
     st.subheader("최종 결과물 공개 (Public Product)")
     st.session_state.public_product = st.text_area(
         "학생들의 결과물을 누구에게, 어떻게 공개할지 구체적으로 작성하세요.",
@@ -262,7 +310,6 @@ def render_step1():
             st.rerun()
         else:
             st.warning("탐구 질문을 먼저 입력해주세요.")
-
 
 def render_step2():
     st.header("🧭 STEP 2. 학습 나침반 준비하기")
@@ -296,15 +343,13 @@ def render_step2():
                           f"--- {grade_group} 성취기준 내용 ---\n{standards_text[:4000]}")
                 
                 recommendations_text = call_gemini(prompt)
-                st.write("--- AI 원본 응답 ---")
-                st.write(recommendations_text) 
                 lines = recommendations_text.strip().split('\n')
                 recommendations = [line.strip() for line in lines if re.match(r'\[\d{1,2}[가-힣]{1,2}\d{2}-\d{2}\]', line.strip())]
                 st.session_state.ai_recommendations = recommendations
                 st.session_state.selected_standards = []
                 st.rerun()
             else:
-                st.warning(f"'{grade_group}'의 성취기준 파일을 불러올 수 없습니다.")
+                st.warning(f"'{grade_group}'의 성취기준 파일을 불러올 수 없습니다. 파일 경로와 내용을 확인해주세요.")
         else:
             st.warning("STEP 1에서 탐구 질문을 먼저 입력해주세요.")
 
@@ -324,7 +369,6 @@ def render_step2():
         st.write("✅ **최종 선택된 성취기준**")
         for std in st.session_state.selected_standards:
             st.success(f"{std}")
-
 
     st.markdown("---")
 
@@ -362,7 +406,6 @@ def render_step2():
                 selected_sel.append(comp)
         st.session_state.selected_sel_competencies = selected_sel
 
-
 def render_step3():
     st.header("🚗 STEP 3. 탐구 여정 디자인하기")
     st.caption("학생들이 경험할 구체적인 탐구, 피드백, 성찰 활동을 계획합니다.")
@@ -385,6 +428,7 @@ def render_step3():
                           f"포함할 활동: {', '.join(selected_tags)}")
                 detailed_process = call_gemini(prompt)
                 st.session_state.sustained_inquiry = detailed_process
+                st.rerun()
             else:
                 st.warning("탐구 질문과 주요 활동을 먼저 입력/선택해주세요.")
 
@@ -405,6 +449,7 @@ def render_step3():
                       f"위 내용에 가장 적합한 평가 방법을 구체적인 예시와 함께 제안해줘. 예를 들어 '체크리스트'라면 어떤 항목을 넣을지, '동료평가'라면 어떤 질문을 할지 등을 포함해줘. 번호 없이 한 줄씩만.")
             suggestions = call_gemini(prompt)
             st.session_state.process_assessment = suggestions
+            st.rerun()
         else:
             st.warning("탐구 질문과 지속적 탐구 계획을 먼저 입력해주세요.")
 
@@ -436,6 +481,7 @@ def render_step3():
                 prompt = f"초등학생 대상 GSPBL 프로젝트를 위한 '비평과 개선(Critique & Revision)' 활동 아이디어를 5가지 제안해줘. 이 프로젝트의 주제는 '{st.session_state.project_title}'이고, 최종 결과물은 '{st.session_state.public_product}'이야. 학생들이 서로 의미 있는 피드백을 주고받고, 자신의 결과물을 발전시킬 수 있는 구체적이고 창의적인 방법을 제안해줘. 번호 없이 한 줄씩만."
                 suggestions = call_gemini(prompt)
                 st.session_state.critique_revision = suggestions
+                st.rerun()
              else:
                 st.warning("STEP 1의 탐구 질문을 먼저 입력해주세요.")
         
@@ -453,6 +499,7 @@ def render_step3():
                 prompt = f"초등학생 대상 GSPBL 프로젝트를 위한 '성찰(Reflection)' 활동 아이디어를 5가지 제안해줘. 이 프로젝트의 주제는 '{st.session_state.project_title}'이야. 학생들이 프로젝트 과정 전반에 걸쳐 자신의 학습, 성장, 느낀 점을 의미 있게 돌아볼 수 있는 구체적이고 창의적인 방법을 제안해줘. 번호 없이 한 줄씩만."
                 suggestions = call_gemini(prompt)
                 st.session_state.reflection = suggestions
+                st.rerun()
             else:
                 st.warning("STEP 1의 탐구 질문을 먼저 입력해주세요.")
 
@@ -469,7 +516,7 @@ def render_step4():
     st.markdown("---")
 
     final_data = {
-        "� 탐구 질문": "project_title",
+        "🎯 탐구 질문": "project_title",
         "📢 최종 결과물 공개": "public_product",
         "📚 교과 성취기준": "selected_standards",
         "💡 핵심역량": "selected_core_competencies",
@@ -518,98 +565,110 @@ def render_step4():
                       f"--- 설계안 내용 ---\n{full_plan}")
             
             st.session_state.ai_feedback = call_gemini(prompt)
+            st.rerun()
         
         if st.session_state.ai_feedback:
             st.markdown(st.session_state.ai_feedback)
 
-    image_data_list = create_lesson_plan_images()
-    if image_data_list:
-        st.subheader("🖼️ 수업 설계 요약표 저장")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button(
-                label="1페이지 JPG로 저장하기",
-                data=image_data_list[0],
-                file_name=f"GSPBL_설계요약표_1페이지.jpg",
-                mime="image/jpeg",
-                use_container_width=True,
-            )
-        with col2:
-             st.download_button(
-                label="2페이지 JPG로 저장하기",
-                data=image_data_list[1],
-                file_name=f"GSPBL_설계요약표_2페이지.jpg",
-                mime="image/jpeg",
-                use_container_width=True,
-            )
+    # 이미지 생성 및 다운로드
+    try:
+        image_data_list = create_lesson_plan_images()
+        if image_data_list and len(image_data_list) >= 2:
+            st.subheader("🖼️ 수업 설계 요약표 저장")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    label="1페이지 JPG로 저장하기",
+                    data=image_data_list[0],
+                    file_name=f"GSPBL_설계요약표_1페이지.jpg",
+                    mime="image/jpeg",
+                    use_container_width=True,
+                )
+            with col2:
+                 st.download_button(
+                    label="2페이지 JPG로 저장하기",
+                    data=image_data_list[1],
+                    file_name=f"GSPBL_설계요약표_2페이지.jpg",
+                    mime="image/jpeg",
+                    use_container_width=True,
+                )
+        else:
+            st.warning("이미지 생성에 실패했습니다. 모든 필드를 입력했는지 확인해주세요.")
+    except Exception as e:
+        st.error(f"이미지 생성 중 오류가 발생했습니다: {e}")
 
 
 # --- 6. 메인 앱 로직 ---
 
 def main():
-    initialize_session_state()
+    try:
+        initialize_session_state()
 
-    if st.session_state.page == 0:
-        render_start_page()
-        st.markdown(
-            """
-            <style>
-            .footer {
-                position: fixed; left: 0; bottom: 0; width: 100%;
-                background-color: transparent; color: #808080;
-                text-align: center; padding: 10px; font-size: 16px;
-            }
-            </style>
-            <div class="footer"><p>서울가동초 백인규</p></div>
-            """,
-            unsafe_allow_html=True
-        )
-    elif st.session_state.page == 1:
-        render_step1()
-    elif st.session_state.page == 2:
-        render_step2()
-    elif st.session_state.page == 3:
-        render_step3()
-    elif st.session_state.page == 4:
-        render_step4()
-
-    if st.session_state.page > 0:
-        st.markdown("---")
-        nav_cols = st.columns([1.5, 2.5, 2, 1.2, 1.2, 1.2])
-        
-        with nav_cols[0]:
-            if st.button("🏠 처음으로", use_container_width=True):
-                for key in list(st.session_state.keys()):
-                    del st.session_state[key]
-                st.rerun()
-
-        with nav_cols[1]:
+        if st.session_state.page == 0:
+            render_start_page()
             st.markdown(
                 """
-                <div style="color: #808080; font-size: 16px; text-align: left; padding-top: 0.5rem; height: 100%; display: flex; align-items: center;">
-                    서울가동초 백인규
-                </div>
+                <style>
+                .footer {
+                    position: fixed; left: 0; bottom: 0; width: 100%;
+                    background-color: transparent; color: #808080;
+                    text-align: center; padding: 10px; font-size: 16px;
+                }
+                </style>
+                <div class="footer"><p>서울가동초 백인규</p></div>
                 """,
                 unsafe_allow_html=True
             )
+        elif st.session_state.page == 1:
+            render_step1()
+        elif st.session_state.page == 2:
+            render_step2()
+        elif st.session_state.page == 3:
+            render_step3()
+        elif st.session_state.page == 4:
+            render_step4()
+
+        if st.session_state.page > 0:
+            st.markdown("---")
+            nav_cols = st.columns([1.5, 2.5, 2, 1.2, 1.2, 1.2])
             
-        with nav_cols[3]:
-            if st.session_state.page > 1:
-                if st.button("⬅️ 이전 단계", use_container_width=True):
-                    st.session_state.page -= 1
+            with nav_cols[0]:
+                if st.button("🏠 처음으로", use_container_width=True):
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
                     st.rerun()
-        
-        with nav_cols[4]:
-            if st.session_state.page < 4:
-                if st.button("➡️ 다음 단계", use_container_width=True):
-                    st.session_state.page += 1
-                    st.rerun()
-        
-        with nav_cols[5]:
-            if st.session_state.page == 3: # STEP 3에서만 최종 확인 버튼 표시
-                if st.button("✨ 최종 확인", use_container_width=True):
-                    st.session_state.page = 4
-                    st.rerun()
+
+            with nav_cols[1]:
+                st.markdown(
+                    """
+                    <div style="color: #808080; font-size: 16px; text-align: left; padding-top: 0.5rem; height: 100%; display: flex; align-items: center;">
+                        서울가동초 백인규
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                
+            with nav_cols[3]:
+                if st.session_state.page > 1:
+                    if st.button("⬅️ 이전 단계", use_container_width=True):
+                        st.session_state.page -= 1
+                        st.rerun()
+            
+            with nav_cols[4]:
+                if st.session_state.page < 4:
+                    if st.button("➡️ 다음 단계", use_container_width=True):
+                        st.session_state.page += 1
+                        st.rerun()
+            
+            with nav_cols[5]:
+                if st.session_state.page == 3: # STEP 3에서만 최종 확인 버튼 표시
+                    if st.button("✨ 최종 확인", use_container_width=True):
+                        st.session_state.page = 4
+                        st.rerun()
+    except Exception as e:
+        st.error(f"앱 실행 중 오류가 발생했습니다: {e}")
+        st.write("오류 상세 정보:")
+        st.exception(e)
 
 if __name__ == "__main__":
     main()
