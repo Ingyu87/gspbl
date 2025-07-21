@@ -35,7 +35,7 @@ else:
 @st.cache_data
 def load_json_data(filename):
     """'data' 폴더에서 JSON 파일을 로드합니다."""
-    filepath = os.path..join('data', filename)
+    filepath = os.path.join('data', filename)
     if not os.path.exists(filepath):
         st.error(f"'{filepath}' 파일을 찾을 수 없습니다. 'data' 폴더 안에 있는지 확인해주세요.")
         return None
