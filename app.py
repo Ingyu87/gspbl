@@ -72,14 +72,18 @@ def parse_achievement_standards(grade_group):
     if toc_start == -1:
         return {} 
     
-    toc_end = text.find('Ⅰ. 성취수준 개발의 이해', toc_start + 20)
-    if toc_end == -1:
-        toc_end = len(text)
+    # 목차의 끝을 찾기 위해 다음 대제목을 탐색
+    toc_end_markers = ['Ⅰ. 성취수준 개발의 이해', 'Ⅱ. 성취수준 활용']
+    toc_end = len(text)
+    for marker in toc_end_markers:
+        found_pos = text.find(marker, toc_start + 20)
+        if found_pos != -1:
+            toc_end = min(toc_end, found_pos)
         
     toc_text = text[toc_start:toc_end]
 
-    # 2. 해당 목차에서만 교과 목록 추출
-    subject_matches = re.finditer(r'^\d+\.\s+([가-힣]+(?: 생활)?)\t\d+', toc_text, re.MULTILINE)
+    # 2. 해당 목차에서만 교과 목록 추출 (더 정확한 정규식)
+    subject_matches = re.finditer(r'^\d+\.\s+([가-힣]+(?: 생활)?)\s*\t\s*\d+', toc_text, re.MULTILINE)
     subject_list = [m.group(1).strip() for m in subject_matches]
 
     # 3. 추출된 교과 목록을 기준으로 본문에서 성취기준 탐색
