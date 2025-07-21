@@ -83,7 +83,7 @@ def create_lesson_plan_images():
     data = st.session_state
     
     rows_page1 = {
-        "� 탐구 질문": data.get('project_title', ''),
+        "🎯 탐구 질문": data.get('project_title', ''),
         "📢 최종 결과물 공개": data.get('public_product', ''),
         "📚 교과 성취기준": "\n".join(data.get('selected_standards', [])),
         "💡 핵심역량": "\n".join(f"• {c}" for c in data.get('selected_core_competencies', [])),
@@ -270,12 +270,17 @@ def render_step2():
 
     st.subheader("교과 성취기준 연결")
     
+    def on_grade_change():
+        st.session_state.ai_recommendations = []
+        st.session_state.selected_standards = []
+
     grade_group = st.radio(
         "학년군 선택",
         ["1-2학년군", "3-4학년군", "5-6학년군"],
         index=["1-2학년군", "3-4학년군", "5-6학년군"].index(st.session_state.grade_group),
         horizontal=True,
-        key="grade_group"
+        key="grade_group",
+        on_change=on_grade_change
     )
 
     if st.button("🤖 AI로 성취기준 추천받기", use_container_width=True):
@@ -288,13 +293,14 @@ def render_step2():
                           f"아래에 제공되는 '{grade_group}' 전체 성취기준 내용 중에서, "
                           f"위 탐구 질문과 가장 관련성이 높은 성취기준 5개를 추천해주세요.\n"
                           f"추천 시, 반드시 성취기준 코드와 내용을 포함한 전체 텍스트 그대로 한 줄씩 나열해주세요.\n\n"
-                          f"--- {grade_group} 성취기준 내용 ---\n{standards_text[:4000]}") # 토큰 제한 고려
+                          f"--- {grade_group} 성취기준 내용 ---\n{standards_text[:4000]}")
                 
                 recommendations_text = call_gemini(prompt)
-                
-                # AI 응답에서 성취기준 코드 형식을 찾아 목록으로 변환
-                st.session_state.ai_recommendations = re.findall(r'(\[\d{1,2}[가-힣]{1,2}\d{2}-\d{2}\].+)', recommendations_text)
-                st.session_state.selected_standards = [] # 추천 시 기존 선택 초기화
+                lines = recommendations_text.strip().split('\n')
+                recommendations = [line.strip() for line in lines if re.match(r'\[\d{1,2}[가-힣]{1,2}\d{2}-\d{2}\]', line.strip())]
+                st.session_state.ai_recommendations = recommendations
+                st.session_state.selected_standards = []
+                st.rerun()
             else:
                 st.warning(f"'{grade_group}'의 성취기준 파일을 불러올 수 없습니다.")
         else:
@@ -302,15 +308,18 @@ def render_step2():
 
     if st.session_state.ai_recommendations:
         st.write("AI가 추천한 성취기준 목록입니다. 이 중에서 프로젝트에 연계할 성취기준을 모두 선택하세요.")
-        st.session_state.selected_standards = st.multiselect(
+        
+        selected = st.multiselect(
             "AI 추천 성취기준",
             options=st.session_state.ai_recommendations,
             default=st.session_state.selected_standards,
             label_visibility="collapsed"
         )
+        st.session_state.selected_standards = selected
     
     if st.session_state.selected_standards:
-        st.write("최종 선택된 성취기준:")
+        st.write("---")
+        st.write("✅ **최종 선택된 성취기준**")
         for std in st.session_state.selected_standards:
             st.success(f"{std}")
 
@@ -458,7 +467,7 @@ def render_step4():
     st.markdown("---")
 
     final_data = {
-        "🎯 탐구 질문": "project_title",
+        "� 탐구 질문": "project_title",
         "📢 최종 결과물 공개": "public_product",
         "📚 교과 성취기준": "selected_standards",
         "💡 핵심역량": "selected_core_competencies",
