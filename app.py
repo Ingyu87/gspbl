@@ -97,7 +97,8 @@ def call_gemini(prompt, show_spinner=True):
     if not GEMINI_API_KEY:
         return "⚠️ AI 기능 비활성화: Gemini API 키가 설정되지 않았습니다."
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        # 모델 이름을 최신 버전으로 변경 (오류 수정)
+        model = genai.GenerativeModel('gemini-1.5-flash')
         if show_spinner:
             with st.spinner("🚀 Gemini AI가 선생님의 아이디어를 확장하고 있어요..."):
                 response = model.generate_content(prompt)
@@ -306,11 +307,14 @@ def render_step2():
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("💡 핵심역량")
+        # 2022 개정 교육과정 6대 핵심역량으로 수정
         core_competencies = {
+            "자기관리 역량": "자아정체성과 자신감을 가지고 자신의 삶과 진로에 필요한 기초 능력과 자질을 갖추어 자기주도적으로 살아가는 능력",
             "지식정보처리 역량": "문제를 합리적으로 해결하기 위해 다양한 영역의 지식과 정보를 처리하고 활용하는 능력",
-            "창의적 사고 역량": "다양한 지식과 경험을 융합하여 새롭고 독창적인 아이디어를 산출하는 능력",
-            "의사소통 역량": "다양한 상황에서 자신의 생각과 감정을 효과적으로 표현하고 다른 사람의 의견을 경청하며 존중하는 능력",
-            "공동체 역량": "지역, 국가, 세계 공동체의 구성원에게 요구되는 가치와 태도를 가지고 공동체 발전에 적극적으로 참여하는 능력"
+            "창의적 사고 역량": "폭넓은 기초 지식을 바탕으로 다양한 전문 분야의 지식, 기술, 경험을 융합적으로 활용하여 새로운 것을 창출하는 능력",
+            "심미적 감성 역량": "인간에 대한 공감적 이해와 문화적 감수성을 바탕으로 삶의 의미와 가치를 발견하고 향유하는 능력",
+            "협력적 소통 역량": "다양한 상황에서 자신의 생각과 감정을 효과적으로 표현하고 다른 사람의 의견을 경청하며 존중하는 태도로 협력하는 능력",
+            "공동체 역량": "지역ㆍ국가ㆍ세계 공동체의 구성원에게 요구되는 가치와 태도를 가지고 공동체 발전에 적극적으로 참여하는 능력"
         }
         selected_core = []
         for comp, desc in core_competencies.items():
@@ -321,10 +325,12 @@ def render_step2():
 
     with col2:
         st.subheader("🌱 사회정서 역량")
+        # CASEL 5대 사회정서 역량으로 수정
         sel_competencies = {
+            "자기 인식 역량": "자신의 감정, 생각, 가치를 정확하게 인식하고, 자신의 강점과 한계를 이해하는 능력입니다.",
+            "자기 관리 역량": "자신의 감정, 생각, 행동을 효과적으로 조절하고 스트레스 관리, 자기 동기 부여, 목표 설정을 통해 과제를 성취하는 능력입니다.",
             "사회적 인식 역량": "타인의 감정과 관점을 이해하고 공감하며, 집단과 공동체 내의 긍정적 규범을 이해하는 능력입니다.",
             "관계 기술 역량": "명확한 의사소통, 적극적인 경청, 협력, 갈등 해결 등을 통해 타인과 긍정적인 관계를 형성하고 유지하는 능력입니다.",
-            "자기 관리 역량": "자신의 감정, 생각, 행동을 효과적으로 조절하고 스트레스 관리, 자기 동기 부여, 목표 설정을 통해 과제를 성취하는 능력입니다.",
             "책임 있는 의사결정 역량": "윤리적 기준, 사회적 규범, 안전 문제 등을 고려하여 자신과 타인에 대해 건설적인 선택을 하는 능력입니다."
         }
         selected_sel = []
@@ -508,31 +514,31 @@ def render_step4():
 def main():
     initialize_session_state()
 
-    # 워터마크 및 푸터
-    footer_css = """
-    <style>
-    .footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: transparent;
-        color: #808080;
-        text-align: center;
-        padding: 10px;
-        font-size: 16px;
-        z-index: 1000;
-    }
-    </style>
-    <div class="footer">
-        <p>서울가동초 백인규</p>
-    </div>
-    """
-    st.markdown(footer_css, unsafe_allow_html=True)
-
     # 페이지 라우팅
     if st.session_state.page == 0:
         render_start_page()
+        # 시작 페이지에만 고정 푸터 표시
+        st.markdown(
+            """
+            <style>
+            .footer {
+                position: fixed;
+                left: 0;
+                bottom: 0;
+                width: 100%;
+                background-color: transparent;
+                color: #808080;
+                text-align: center;
+                padding: 10px;
+                font-size: 16px;
+            }
+            </style>
+            <div class="footer">
+                <p>서울가동초 백인규</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
     elif st.session_state.page == 1:
         render_step1()
     elif st.session_state.page == 2:
@@ -545,27 +551,40 @@ def main():
     # 네비게이션 버튼 (0페이지 제외)
     if st.session_state.page > 0:
         st.markdown("---")
-        nav_cols = st.columns( (1, 1, 1, 3, 1, 1, 1) )
+        # 컬럼 재구성: [처음으로] [워터마크] [스페이서] [이전] [다음] [최종확인]
+        nav_cols = st.columns([1.5, 2.5, 2, 1.2, 1.2, 1.2])
+        
         with nav_cols[0]:
             if st.button("🏠 처음으로", use_container_width=True):
                 # 모든 세션 상태 초기화
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
                 st.rerun()
-        
+
+        # '처음으로' 버튼 오른쪽에 워터마크 추가
         with nav_cols[1]:
+            st.markdown(
+                """
+                <div style="color: #808080; font-size: 16px; text-align: left; padding-top: 0.5rem; height: 100%; display: flex; align-items: center;">
+                    서울가동초 백인규
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+        with nav_cols[3]:
             if st.session_state.page > 1:
                 if st.button("⬅️ 이전 단계", use_container_width=True):
                     st.session_state.page -= 1
                     st.rerun()
         
-        with nav_cols[-2]:
+        with nav_cols[4]:
             if st.session_state.page < 4:
                 if st.button("➡️ 다음 단계", use_container_width=True):
                     st.session_state.page += 1
                     st.rerun()
         
-        with nav_cols[-1]:
+        with nav_cols[5]:
             if st.session_state.page != 4:
                 if st.button("✨ 최종 확인", use_container_width=True):
                     st.session_state.page = 4
