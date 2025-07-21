@@ -4,6 +4,7 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import textwrap
 import os
+import re # 정규표현식을 위한 모듈 임포트
 import google.generativeai as genai
 
 # --- 1. 초기 설정 및 API 키 구성 ---
@@ -31,22 +32,72 @@ else:
 
 # --- 2. 데이터 로드 및 처리 함수 ---
 
+# >>>>> 🌟 5-6학년군 텍스트 데이터를 파싱하는 함수 추가 🌟 <<<<<
+def parse_5_6_standards_text(text_content):
+    """긴 텍스트에서 성취기준 데이터를 추출하여 JSON 리스트 형식으로 변환합니다."""
+    parsed_data = []
+    
+    # 과목 약어와 전체 이름 매핑
+    subject_map = {
+        '국': '국어', '사': '사회', '도': '도덕', '수': '수학',
+        '과': '과학', '실': '실과', '체': '체육', '음': '음악',
+        '미': '미술', '영': '영어'
+    }
+    
+    # [6국01-01] 형식의 성취기준 코드를 찾는 정규표현식
+    # 그룹 1: 전체 코드 (예: 6국01-01)
+    # 그룹 2: 과목 약어 (예: 국)
+    # 그룹 3: 성취기준 텍스트
+    pattern = re.compile(r'\[(6([가-힣]{1,2})\d{2}-\d{2})\]\s(.+)')
+    
+    lines = text_content.split('\n')
+    for line in lines:
+        match = pattern.match(line.strip())
+        if match:
+            full_code = match.group(1)
+            subject_abbr = match.group(2)
+            standard_text = match.group(3).strip()
+            
+            subject_full = subject_map.get(subject_abbr)
+            
+            if subject_full:
+                parsed_data.append({
+                    "학년군": "5~6",
+                    "교과": subject_full,
+                    "영역": "", # 원본 텍스트에 영역 정보가 없으므로 비워둠
+                    "성취기준_설명": "",
+                    "학습_요소": "",
+                    "성취기준_코드": f"[{full_code}]",
+                    "성취기준": standard_text
+                })
+    return parsed_data
+
 @st.cache_data
 def load_json_data(filename):
-    """'data' 폴더에서 JSON 파일을 로드합니다."""
+    """'data' 폴더에서 JSON 파일을 로드하고, 5-6학년군 데이터는 파싱합니다."""
     filepath = os.path.join('data', filename)
     if not os.path.exists(filepath):
         st.error(f"'{filepath}' 파일을 찾을 수 없습니다. 'data' 폴더 안에 있는지 확인해주세요.")
         return None
     try:
         with open(filepath, 'r', encoding='utf-8-sig') as f:
-            return json.load(f)
+            data = json.load(f)
+            
+            # >>>>> 🌟 5-6학년군 파일인지 확인하고 파서 호출 🌟 <<<<<
+            if isinstance(data, dict) and 'content' in data:
+                return parse_5_6_standards_text(data['content'])
+            # 1-2, 3-4학년군 파일은 그대로 반환
+            elif isinstance(data, list):
+                return data
+            else:
+                st.error(f"'{filepath}' 파일의 형식이 올바르지 않습니다.")
+                return None
+                
     except Exception as e:
-        st.error(f"'{filepath}' 파일 로딩 중 오류: {e}")
+        st.error(f"'{filepath}' 파일 로딩 또는 파싱 중 오류: {e}")
         return None
 
-# --- 3. AI 및 이미지 생성 함수 ---
-
+# --- 3. AI 및 이미지 생성 함수 (이하 동일) ---
 def call_gemini(prompt, show_spinner=True):
     """Gemini 모델을 호출하여 텍스트를 생성합니다."""
     if not GEMINI_API_KEY:
@@ -79,7 +130,6 @@ def summarize_text_for_image(text, max_chars=400):
     except Exception:
         return text[:max_chars] + "..."
 
-# >>>>> 🌟 글씨 잘림 문제 해결을 위해 수정된 함수 🌟 <<<<<
 def create_lesson_plan_images():
     """세션 데이터를 '요약'하고 '정확한 높이를 계산'하여 2페이지 분량의 이미지를 생성합니다."""
     original_data = st.session_state
@@ -160,7 +210,6 @@ def create_lesson_plan_images():
                 if h_align == 'center':
                     x_text = x + (w - line_width) / 2
                 
-                # 안전장치: 박스 높이를 초과하지 않을 경우에만 텍스트를 그림
                 if y_text + line_height <= y + h:
                     draw.text((x_text, y_text), line, font=font, fill=text_color)
                     y_text += line_height
@@ -174,7 +223,6 @@ def create_lesson_plan_images():
             content_str = str(content)
             content_box_width = width - margin * 2 - 300
             
-            # --- Start of new height calculation logic ---
             wrapped_lines = []
             for line in content_str.split('\n'):
                 w_lines = textwrap.wrap(line, width=int(content_box_width / (body_font.size * 0.55)), break_long_words=True, replace_whitespace=False)
@@ -183,12 +231,8 @@ def create_lesson_plan_images():
             line_height_for_calc = body_font.getbbox("A")[3] + 6
             total_text_height = len(wrapped_lines) * line_height_for_calc
             
-            # 상하 여백(padding)을 30px로 설정
             required_height = total_text_height + 30
-            
-            # 최소 높이를 100px로 보장
             row_height = max(100, required_height)
-            # --- End of new height calculation logic ---
             
             if y_pos + row_height > height - margin:
                 row_height = height - margin - y_pos
@@ -208,7 +252,6 @@ def create_lesson_plan_images():
     return images
 
 # --- 4. 세션 상태 초기화 ---
-
 def initialize_session_state():
     """앱의 모든 단계에서 사용될 변수들을 초기화합니다."""
     if "page" not in st.session_state:
@@ -299,6 +342,7 @@ def render_step1():
         else:
             st.warning("탐구 질문을 먼저 입력해주세요.")
 
+# >>>>> 🌟 5-6학년군 기능 활성화를 위해 수정된 함수 🌟 <<<<<
 def render_step2():
     st.header("🧭 STEP 2. 학습 나침반 준비하기")
     st.caption("프로젝트를 통해 달성할 교과 성취기준과 핵심 역량을 명확히 설정합니다.")
@@ -308,7 +352,7 @@ def render_step2():
     VALID_SUBJECTS = {
         "1-2학년군": ["국어", "수학", "바른 생활", "슬기로운 생활", "즐거운 생활"],
         "3-4학년군": ["국어", "도덕", "사회", "수학", "과학", "체육", "음악", "미술", "영어"],
-        "5-6학년군": []
+        "5-6학년군": ["국어", "사회", "도덕", "수학", "과학", "실과", "체육", "음악", "미술", "영어"]
     }
 
     def on_grade_change():
@@ -323,54 +367,53 @@ def render_step2():
         on_change=on_grade_change
     )
 
-    if grade_group == "5-6학년군":
-        st.info("🚧 5-6학년군 성취기준 데이터는 현재 준비 중입니다. 추후 업데이트될 예정입니다.")
-    else:
-        filename = f"{grade_group}_성취기준.json"
-        standards_data = load_json_data(filename)
+    # 이제 5-6학년군도 정상적으로 동작
+    filename = f"{grade_group}_성취기준.json"
+    standards_data = load_json_data(filename)
 
-        if standards_data:
-            subjects = VALID_SUBJECTS[grade_group]
+    if standards_data:
+        subjects = VALID_SUBJECTS[grade_group]
+        
+        selected_subject = st.selectbox(
+            "과목을 선택하세요.",
+            subjects,
+            key='selected_subject'
+        )
+
+        if selected_subject:
+            current_subject_standards = [
+                f"{item['성취기준_코드']} {item['성취기준']}"
+                for item in standards_data
+                if item.get('교과') == selected_subject and item.get('성취기준_코드') and item.get('성취기준')
+            ]
             
-            selected_subject = st.selectbox(
-                "과목을 선택하세요.",
-                subjects,
-                key='selected_subject'
-            )
+            if current_subject_standards:
+                st.write(f"**'{selected_subject}' 과목의 성취기준 목록입니다. 프로젝트에 연계할 기준을 모두 선택하세요.**")
+                
+                default_selection = [
+                    s for s in st.session_state.selected_standards 
+                    if s in current_subject_standards
+                ]
 
-            if selected_subject:
-                current_subject_standards = [
-                    f"{item['성취기준_코드']} {item['성취기준']}"
-                    for item in standards_data
-                    if item.get('교과') == selected_subject and item.get('성취기준_코드') and item.get('성취기준')
+                selected_in_current_subject = st.multiselect(
+                    "성취기준 선택",
+                    options=current_subject_standards,
+                    default=default_selection,
+                    label_visibility="collapsed"
+                )
+
+                standards_from_other_subjects = [
+                    s for s in st.session_state.selected_standards 
+                    if s not in current_subject_standards
                 ]
                 
-                if current_subject_standards:
-                    st.write(f"**'{selected_subject}' 과목의 성취기준 목록입니다. 프로젝트에 연계할 기준을 모두 선택하세요.**")
-                    
-                    default_selection = [
-                        s for s in st.session_state.selected_standards 
-                        if s in current_subject_standards
-                    ]
+                st.session_state.selected_standards = sorted(list(set(standards_from_other_subjects + selected_in_current_subject)))
 
-                    selected_in_current_subject = st.multiselect(
-                        "성취기준 선택",
-                        options=current_subject_standards,
-                        default=default_selection,
-                        label_visibility="collapsed"
-                    )
-
-                    standards_from_other_subjects = [
-                        s for s in st.session_state.selected_standards 
-                        if s not in current_subject_standards
-                    ]
-                    
-                    st.session_state.selected_standards = sorted(list(set(standards_from_other_subjects + selected_in_current_subject)))
-
-                else:
-                    st.warning(f"'{selected_subject}' 과목에 대한 성취기준을 불러올 수 없습니다.")
-        else:
-            st.error(f"'{filename}' 파일을 불러오는 데 실패했습니다. 파일이 'data' 폴더에 있는지 확인해주세요.")
+            else:
+                st.warning(f"'{selected_subject}' 과목에 대한 성취기준을 불러올 수 없습니다.")
+    else:
+        # load_json_data 함수 내에서 오류 메시지가 이미 표시됨
+        pass
 
     if st.session_state.selected_standards:
         st.markdown("---")
