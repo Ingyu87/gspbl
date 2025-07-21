@@ -256,19 +256,15 @@ def render_step2():
 
     st.subheader("교과 성취기준 연결")
 
-    # 각 학년군별 올바른 과목 목록을 미리 정의
     VALID_SUBJECTS = {
         "1-2학년군": ["국어", "수학", "바른 생활", "슬기로운 생활", "즐거운 생활"],
         "3-4학년군": ["국어", "도덕", "사회", "수학", "과학", "체육", "음악", "미술", "영어"],
-        "5-6학년군": [] # 5-6학년군은 비워둠
+        "5-6학년군": []
     }
 
-    # 학년군 변경 시, 선택된 과목과 성취기준을 모두 초기화하는 콜백
+    # 학년군 변경 시, 선택된 성취기준은 그대로 두고 과목만 초기화
     def on_grade_change():
-        st.session_state.selected_standards = []
-        # 학년군에 맞는 첫번째 과목으로 기본값 변경
         st.session_state.selected_subject = VALID_SUBJECTS[st.session_state.grade_group][0] if VALID_SUBJECTS[st.session_state.grade_group] else ""
-
 
     grade_group = st.radio(
         "학년군 선택",
@@ -288,7 +284,6 @@ def render_step2():
         if standards_data:
             subjects = VALID_SUBJECTS[grade_group]
             
-            # 과목 선택. 과목 변경 시에는 선택한 성취기준이 초기화되지 않음.
             selected_subject = st.selectbox(
                 "과목을 선택하세요.",
                 subjects,
@@ -296,7 +291,6 @@ def render_step2():
             )
 
             if selected_subject:
-                # 현재 선택된 과목에 해당하는 성취기준 필터링
                 current_subject_standards = [
                     f"{item['성취기준_코드']} {item['성취기준']}"
                     for item in standards_data
@@ -306,23 +300,26 @@ def render_step2():
                 if current_subject_standards:
                     st.write(f"**'{selected_subject}' 과목의 성취기준 목록입니다. 프로젝트에 연계할 기준을 모두 선택하세요.**")
                     
-                    # 현재 과목에서 성취기준 선택
-                    # default 값으로 전체 선택된 리스트를 넣어주면, 현재 과목에 해당하는 것만 자동으로 체크됨
+                    # >>>>> 수정된 부분 <<<<<
+                    # default 값으로 들어갈 리스트를 현재 options에 있는 것들로만 필터링
+                    default_selection = [
+                        s for s in st.session_state.selected_standards 
+                        if s in current_subject_standards
+                    ]
+
                     selected_in_current_subject = st.multiselect(
                         "성취기준 선택",
                         options=current_subject_standards,
-                        default=st.session_state.selected_standards, # 전체 선택된 기준을 default로
+                        default=default_selection, # 필터링된 default 값을 사용
                         label_visibility="collapsed"
                     )
 
-                    # --- 누적 로직 ---
-                    # 1. 다른 과목에서 이미 선택된 성취기준들을 가져온다.
+                    # --- 누적 로직 (기존과 동일하지만 이제 오류 없이 동작) ---
                     standards_from_other_subjects = [
                         s for s in st.session_state.selected_standards 
                         if s not in current_subject_standards
                     ]
                     
-                    # 2. 다른 과목에서 선택된 것들과 현재 과목에서 선택된 것들을 합친다.
                     st.session_state.selected_standards = sorted(list(set(standards_from_other_subjects + selected_in_current_subject)))
 
                 else:
@@ -330,7 +327,6 @@ def render_step2():
         else:
             st.error(f"'{filename}' 파일을 불러오는 데 실패했습니다. 파일이 'data' 폴더에 있는지 확인해주세요.")
 
-    # 최종적으로 누적된 모든 성취기준을 보여주는 부분
     if st.session_state.selected_standards:
         st.markdown("---")
         st.write("✅ **최종 선택된 성취기준 (모든 과목 누적)**")
@@ -339,7 +335,6 @@ def render_step2():
 
     st.markdown("---")
 
-    # 핵심역량 및 사회정서 역량 선택 (기존과 동일)
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("💡 핵심역량")
@@ -394,7 +389,7 @@ def render_step3():
             if selected_tags and st.session_state.project_title:
                 prompt = (f"초등학생 대상 GSPBL 프로젝트의 '지속적 탐구' 과정을 구체적으로 설계해줘.\n"
                           f"프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야.\n"
-                          f"다음과 같은 활동들을 포함해서, 각 단계별로 학생들이 무엇을 할지, 어떤 디지털 도구를 사용하면 좋을지 예시를 들어 간단한 과정안(1차시 : 40분)을 작성해줘.\n\n"
+                          f"다음과 같은 활동들을 포함해서, 몇차시로 진행할지, 각 단계별로 학생들이 무엇을 할지, 어떤 디지털 도구를 사용하면 좋을지 예시를 들어 간단하게 작성해줘.\n\n"
                           f"포함할 활동: {', '.join(selected_tags)}")
                 detailed_process = call_gemini(prompt)
                 st.session_state.sustained_inquiry = detailed_process
