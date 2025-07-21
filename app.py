@@ -79,8 +79,9 @@ def summarize_text_for_image(text, max_chars=400):
     except Exception:
         return text[:max_chars] + "..."
 
+# >>>>> 🌟 글씨 잘림 문제 해결을 위해 수정된 함수 🌟 <<<<<
 def create_lesson_plan_images():
-    """세션 데이터를 '요약'하여 2페이지 분량의 이미지를 생성합니다."""
+    """세션 데이터를 '요약'하고 '정확한 높이를 계산'하여 2페이지 분량의 이미지를 생성합니다."""
     original_data = st.session_state
     
     display_data = {}
@@ -159,7 +160,8 @@ def create_lesson_plan_images():
                 if h_align == 'center':
                     x_text = x + (w - line_width) / 2
                 
-                if y_text + line_height < y + h:
+                # 안전장치: 박스 높이를 초과하지 않을 경우에만 텍스트를 그림
+                if y_text + line_height <= y + h:
                     draw.text((x_text, y_text), line, font=font, fill=text_color)
                     y_text += line_height
         
@@ -169,19 +171,34 @@ def create_lesson_plan_images():
         y_pos += 80 + 10
 
         for header, content in rows.items():
-            lines = []
-            for line in str(content).split('\n'):
-                wrapped_lines = textwrap.wrap(line, width=65)
-                lines.extend(wrapped_lines if wrapped_lines else [''])
-            row_height = max(100, len(lines) * 30 + 40)
+            content_str = str(content)
+            content_box_width = width - margin * 2 - 300
+            
+            # --- Start of new height calculation logic ---
+            wrapped_lines = []
+            for line in content_str.split('\n'):
+                w_lines = textwrap.wrap(line, width=int(content_box_width / (body_font.size * 0.55)), break_long_words=True, replace_whitespace=False)
+                wrapped_lines.extend(w_lines if w_lines else [''])
+            
+            line_height_for_calc = body_font.getbbox("A")[3] + 6
+            total_text_height = len(wrapped_lines) * line_height_for_calc
+            
+            # 상하 여백(padding)을 30px로 설정
+            required_height = total_text_height + 30
+            
+            # 최소 높이를 100px로 보장
+            row_height = max(100, required_height)
+            # --- End of new height calculation logic ---
             
             if y_pos + row_height > height - margin:
                 row_height = height - margin - y_pos
 
             draw.rectangle([(margin, y_pos), (margin + 300, y_pos + row_height)], fill=(245, 245, 245), outline=line_color)
             draw_multiline_text_in_box(header, header_font, (margin, y_pos, 300, row_height), v_align='center', h_align='center')
+            
             draw.rectangle([(margin + 300, y_pos), (width - margin, y_pos + row_height)], fill='white', outline=line_color)
-            draw_multiline_text_in_box(str(content), body_font, (margin + 300, y_pos, width - margin*2 - 300, row_height))
+            draw_multiline_text_in_box(content_str, body_font, (margin + 300, y_pos, content_box_width, row_height))
+            
             y_pos += row_height
 
         buffer = io.BytesIO()
@@ -189,7 +206,6 @@ def create_lesson_plan_images():
         images.append(buffer.getvalue())
         
     return images
-
 
 # --- 4. 세션 상태 초기화 ---
 
@@ -225,7 +241,6 @@ def render_start_page():
         st.session_state.page = 1
         st.rerun()
 
-# >>>>> 🌟 STEP 1 수정 🌟 <<<<<
 def render_step1():
     st.header("🗺️ STEP 1. 최종 목적지 설정하기")
     st.caption("프로젝트의 핵심이 되는 탐구 질문과 최종 결과물을 설정합니다.")
@@ -274,7 +289,6 @@ def render_step1():
     )
     if st.button("🤖 AI로 최종 산출물 제안받기", key="product_ai", use_container_width=True):
         if st.session_state.project_title:
-            # >>>>> 수정된 프롬프트: 학년군 정보를 추가하여 더 동적인 답변 유도 <<<<<
             prompt = (f"'{st.session_state.grade_group}' 학생들을 위한 GSPBL 프로젝트의 '최종 결과물 공개' 아이디어를 5가지 제안해줘. "
                       f"이 프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야. "
                       f"학생들이 프로젝트 결과를 교실 밖 실제 세상과 공유할 수 있는, **'{st.session_state.grade_group}' 수준에 맞는 창의적이고 다양한 방법**을 제안해줘. "
@@ -400,7 +414,6 @@ def render_step2():
                 selected_sel.append(comp)
         st.session_state.selected_sel_competencies = selected_sel
 
-# >>>>> 🌟 STEP 3 수정 🌟 <<<<<
 def render_step3():
     st.header("🚗 STEP 3. 탐구 여정 디자인하기")
     st.caption("학생들이 경험할 구체적인 탐구, 피드백, 성찰 활동을 계획합니다.")
@@ -416,10 +429,7 @@ def render_step3():
         selected_tags = st.multiselect("주요 활동을 선택하여 탐구의 뼈대를 만들어보세요.", options=inquiry_tags)
         
         if st.button("선택한 활동으로 AI 과정 구체화하기"):
-            # 탐구 질문과 활동 태그가 모두 선택되었는지 확인
             if selected_tags and st.session_state.project_title:
-                # >>>>> 수정된 프롬프트: STEP 2의 모든 정보를 맥락으로 제공 <<<<<
-                # 가독성을 위해 f-string과 여러 변수를 사용
                 context_grade = st.session_state.grade_group
                 context_title = st.session_state.project_title
                 context_standards = "\n".join(f"- {s}" for s in st.session_state.selected_standards)
