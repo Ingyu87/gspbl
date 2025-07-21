@@ -8,247 +8,254 @@ import google.generativeai as genai
 
 # --- API 키 설정 ---
 # Streamlit Secrets에서 API 키를 가져옵니다.
-# 로컬에서 테스트할 경우, 직접 키를 입력하거나 환경 변수를 사용하세요.
 try:
-    # For Streamlit Community Cloud, set API key in st.secrets
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=GEMINI_API_KEY)
 except (FileNotFoundError, KeyError):
-    # Local development
-    # 로컬에서 실행 시, 여기에 직접 API 키를 입력하세요.
-    # 예: GEMINI_API_KEY = "YOUR_API_KEY_HERE"
-    # 실제 배포 시에는 이 부분을 비워두거나 st.secrets를 사용하는 것이 안전합니다.
-    GEMINI_API_KEY = "" 
+    GEMINI_API_KEY = "" # 로컬 테스트 시 여기에 API 키를 입력하세요.
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
     else:
-        # API 키가 없을 경우 경고 메시지를 표시하고 AI 기능을 비활성화합니다.
-        st.warning("Gemini API 키가 설정되지 않았습니다. AI 기능을 사용하려면 API 키를 입력해주세요.")
+        st.warning("Gemini API 키가 설정되지 않았습니다. AI 기능을 사용하려면 앱 설정(secrets)에 API 키를 추가해주세요.")
 
+# --- 데이터 로드 함수 ---
+@st.cache_data
+def load_data(filename):
+    """'data' 폴더에서 JSON 파일을 로드합니다."""
+    filepath = os.path.join('data', filename)
+    if not os.path.exists(filepath):
+        st.error(f"'{filepath}' 파일을 찾을 수 없습니다. 'data' 폴더 안에 있는지 확인해주세요.")
+        return None
+    try:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
+            return json.load(f)
+    except Exception as e:
+        st.error(f"'{filepath}' 파일 로딩 중 오류: {e}")
+        return None
 
 # --- Gemini API 호출 함수 ---
-def call_gemini(prompt):
+def call_gemini(prompt, show_spinner=True):
     """Gemini Pro 모델을 호출하여 텍스트를 생성하는 함수"""
     if not GEMINI_API_KEY:
         return "API 키가 설정되지 않아 AI 기능을 사용할 수 없습니다."
     try:
         model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
-        return response.text
+        if show_spinner:
+            with st.spinner("Gemini AI가 생각 중입니다..."):
+                response = model.generate_content(prompt)
+                return response.text
+        else:
+            response = model.generate_content(prompt)
+            return response.text
     except Exception as e:
         st.error(f"Gemini API 호출 중 오류가 발생했습니다: {e}")
         return "AI 응답을 생성하는 데 실패했습니다."
-
-# --- 데이터 로드 함수 ---
-@st.cache_data
-def load_achievement_data(grade_group):
-    """학년군에 맞는 성취기준 JSON 파일을 로드합니다."""
-    file_map = {
-        '1-2학년군': '1-2학년군_성취수준.json',
-        '3-4학년군': '3-4학년군_성취수준.json',
-        '5-6학년군': '5-6학년군_성취수준.json'
-    }
-    filename = file_map.get(grade_group)
-    if not filename or not os.path.exists(filename):
-        st.error(f"'{filename}' 파일을 찾을 수 없습니다. `app.py`와 같은 폴더에 있는지 확인해주세요.")
-        return None
-    try:
-        with open(filename, 'r', encoding='utf-8-sig') as f:
-            content = f.read()
-            if content.startswith('\ufeff'):
-                content = content[1:]
-            data = json.loads(content)
-            return data.get('content', data)
-    except json.JSONDecodeError as e:
-        st.error(f"'{filename}' 파일 파싱 중 오류가 발생했습니다: {e}")
-        return None
 
 # --- 세션 상태 초기화 ---
 def initialize_session_state():
     """앱의 모든 단계에서 사용될 변수들을 초기화합니다."""
     defaults = {
-        "page": "STEP 1",
-        "project_theme": "",
-        "public_product": "",
-        "selected_standards_dict": {},
-        "selected_competencies": [],
-        "inquiry_plan": "",
-        "student_choice": [],
-        "revision_plan": "",
-        "reflection_plan": "",
-        "ai_suggestions": [],
+        "page": "Start", "project_name": "", "inquiry_question": "",
+        "product": "", "process": "", "assessment": "",
+        "competencies": "", "achievement_standards": []
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
-# --- 페이지 이동 함수 ---
-def next_page(page_name):
-    st.session_state.page = page_name
+# --- JPG 이미지 생성 함수 (장학자료 양식) ---
+def create_lesson_plan_image_table(data):
+    """세션 데이터를 바탕으로 '장학 자료' 표 형식의 JPG 이미지를 생성합니다."""
+    width, height = 1200, 1600
+    margin = 50
+    bg_color = (240, 242, 246)
+    header_bg_color = (230, 255, 230)
+    line_color = (200, 200, 200)
 
-# --- JPG 이미지 생성 함수 ---
-def create_lesson_plan_image(data):
-    """세션 데이터를 바탕으로 JPG 이미지를 생성합니다."""
-    width, height = 1200, 2200
-    margin = 60
-    font_path = "font.ttf"
+    font_path = os.path.join('data', "Pretendard-Regular.ttf")
     if not os.path.exists(font_path):
         st.error(f"`{font_path}` 파일을 찾을 수 없습니다.")
         return None
+    
     try:
-        title_font = ImageFont.truetype(font_path, 50)
-        header_font = ImageFont.truetype(font_path, 35)
+        header_font = ImageFont.truetype(font_path, 32)
         body_font = ImageFont.truetype(font_path, 24)
+        project_font = ImageFont.truetype(font_path, 36)
     except IOError:
         st.error(f"`{font_path}` 폰트 파일을 열 수 없습니다.")
         return None
 
-    img = Image.new('RGB', (width, height), color='white')
+    img = Image.new('RGB', (width, height), color=bg_color)
     draw = ImageDraw.Draw(img)
-    y_position = margin
 
-    def draw_multiline_text(text, font, text_color, start_y, indent=0):
+    def draw_multiline_text_in_box(text, font, box, text_color='black'):
+        """지정된 상자 안에 여러 줄의 텍스트를 그립니다."""
+        x, y, w, h = box
         lines = []
         for line in text.split('\n'):
-            wrapped_lines = textwrap.wrap(line, width=70)
+            wrapped_lines = textwrap.wrap(line, width=55)
             lines.extend(wrapped_lines if wrapped_lines else [''])
-        line_height = font.getbbox("A")[3] + 8
-        x = margin + indent
+        
+        y_text = y + 15
+        line_height = font.getbbox("A")[3] + 5
         for line in lines:
-            if start_y < height - margin:
-                draw.text((x, start_y), line, font=font, fill=text_color)
-                start_y += line_height
-        return start_y
+            if y_text + line_height < y + h:
+                draw.text((x + 15, y_text), line, font=font, fill=text_color)
+                y_text += line_height
 
-    title_text = f'"{data["project_theme"]}" GSPBL 수업 설계도'
-    y_position = draw_multiline_text(title_text, title_font, 'black', y_position)
-    y_position += 30
-    draw.line([(margin, y_position), (width - margin, y_position)], fill="gray", width=2)
-    y_position += 30
-    
-    sections = {
-        "최종 결과물 공개": data["public_product"],
-        "연결된 성취기준": '\n'.join(data["selected_standards_dict"].values()) if data["selected_standards_dict"] else "선택된 성취기준이 없습니다.",
-        "핵심 성공 역량": ', '.join(data["selected_competencies"]) if data["selected_competencies"] else "선택된 역량이 없습니다.",
-        "지속적 탐구 계획": data["inquiry_plan"],
-        "학생 선택권": ', '.join(data["student_choice"]),
-        "비평 및 개선 계획": data["revision_plan"],
-        "성찰 계획": data["reflection_plan"]
+    # 프로젝트명
+    y_pos = margin
+    draw.rectangle([(margin, y_pos), (width - margin, y_pos + 80)], fill=header_bg_color, outline=line_color)
+    draw_multiline_text_in_box(f"융합 프로젝트명: {data.get('project_name', '')}", project_font, (margin, y_pos, width - margin*2, 80))
+    y_pos += 90
+
+    # 테이블 그리기
+    rows = {
+        "성취기준": "\n".join(data.get('achievement_standards', [])),
+        "탐구질문 (또는 핵심아이디어)": data.get('inquiry_question', ''),
+        "프로젝트 산출물": data.get('product', ''),
+        "프로젝트 과정": data.get('process', ''),
+        "과정중심 평가": data.get('assessment', ''),
+        "핵심역량, 사회정서역량": data.get('competencies', '')
     }
+    
+    row_heights = [180, 150, 150, 300, 150, 150]
+    header_width = 250
 
-    for header, content in sections.items():
-        if y_position > height - 150: break
-        draw.text((margin, y_position), f"■ {header}", font=header_font, fill='#003366')
-        y_position += 50
-        y_position = draw_multiline_text(content, body_font, 'black', y_position, indent=20)
-        y_position += 40
+    for i, ((header, content), h) in enumerate(zip(rows.items(), row_heights)):
+        # Header Box
+        draw.rectangle([(margin, y_pos), (margin + header_width, y_pos + h)], fill=(235, 235, 235), outline=line_color)
+        draw_multiline_text_in_box(header, header_font, (margin, y_pos, header_width, h))
+        # Content Box
+        draw.rectangle([(margin + header_width, y_pos), (width - margin, y_pos + h)], fill='white', outline=line_color)
+        draw_multiline_text_in_box(content, body_font, (margin + header_width, y_pos, width - margin*2 - header_width, h))
+        y_pos += h
 
     buffer = io.BytesIO()
     img.save(buffer, format="JPEG")
     return buffer.getvalue()
 
+# --- 페이지 렌더링 함수 ---
+def render_start_page():
+    st.title("GSPBL 수업 설계 내비게이터 🚀 (v2.0)")
+    st.markdown("수업 설계를 시작하는 방법을 선택해주세요.")
 
-# --- 각 페이지 렌더링 함수 ---
-def render_step1():
-    st.header("🗺️ STEP 1: 프로젝트 주제 정하기 (AI 도움받기)")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("🌟 수업 예시로 시작하기", use_container_width=True):
+            st.session_state.start_method = "example"
+    with col2:
+        if st.button("💡 교육과정 핵심 아이디어로 시작하기", use_container_width=True):
+            st.session_state.start_method = "core_idea"
+    with col3:
+        if st.button("📄 새로 시작하기", use_container_width=True):
+            st.session_state.page = "Design"
+            st.rerun()
     
-    # --- AI로 주제 추천받기 ---
-    st.subheader("🤖 AI로 도전적인 질문 추천받기")
-    ai_keyword = st.text_input("프로젝트 관련 키워드를 입력하세요 (예: 환경, 우리 동네, 건강)", key="ai_keyword")
-    if st.button("AI에게 질문 아이디어 요청하기"):
-        if ai_keyword:
-            prompt = f"초등학생 대상 GSPBL 프로젝트 수업에 사용할 '도전적인 질문' 아이디어를 '{ai_keyword}'라는 키워드를 중심으로 5개만 생성해줘. 각 아이디어는 물음표로 끝나는 질문 형태로, 한 문장으로 간결하게 만들어줘. 답변은 번호 없이, 각 질문을 한 줄씩 나열해줘."
-            with st.spinner("Gemini AI가 창의적인 질문을 생성 중입니다..."):
-                response = call_gemini(prompt)
-                st.session_state.ai_suggestions = [line.strip() for line in response.split('\n') if line.strip()]
-        else:
-            st.warning("추천을 받으려면 키워드를 입력해주세요.")
+    if "start_method" in st.session_state:
+        if st.session_state.start_method == "example":
+            janghak_data = load_data("장학자료.json")
+            if janghak_data:
+                plans = janghak_data["lesson_plans"]
+                options = {f"{p['subject']} ({p['grade_group']}): {p['unit']}": p for p in plans}
+                selected_plan_title = st.selectbox("불러올 수업 예시를 선택하세요.", options.keys())
+                if st.button("이 예시로 설계 시작하기", type="primary"):
+                    selected_plan = options[selected_plan_title]
+                    st.session_state.project_name = selected_plan.get("unit", "")
+                    st.session_state.inquiry_question = selected_plan.get("inquiry_question", "")
+                    st.session_state.product = selected_plan.get("evaluation_task", {}).get("product", "")
+                    st.session_state.process = "\n".join([f"{item['period']}차시: {item['topic']}" for item in selected_plan.get("teaching_plan", [])])
+                    st.session_state.page = "Design"
+                    st.rerun()
 
-    if st.session_state.ai_suggestions:
-        st.write("AI가 추천하는 질문 아이디어입니다. 마음에 드는 질문을 클릭하면 아래에 자동으로 입력됩니다.")
-        for suggestion in st.session_state.ai_suggestions:
-            if st.button(suggestion, key=suggestion):
-                st.session_state.project_theme = suggestion
-                st.rerun() # 클릭 시 바로 반영되도록
+        elif st.session_state.start_method == "core_idea":
+            core_idea_data = load_data("핵심아이디어.json")
+            if core_idea_data:
+                subjects = sorted(list(set(item["교과"] for item in core_idea_data)))
+                selected_subject = st.selectbox("교과를 선택하세요.", subjects)
+                
+                domains = sorted(list(set(item["영역"] for item in core_idea_data if item["교과"] == selected_subject)))
+                selected_domain = st.selectbox("영역을 선택하세요.", domains)
 
-    st.markdown("---")
+                core_idea = next((item["핵심 아이디어"] for item in core_idea_data if item["교과"] == selected_subject and item["영역"] == selected_domain), "")
+                st.info(f"**선택된 핵심 아이디어:**\n\n{core_idea}")
+
+                if st.button("이 아이디어로 설계 시작하기", type="primary"):
+                    st.session_state.project_name = f"{selected_subject} ({selected_domain}) 프로젝트"
+                    prompt = f"다음 교육과정 핵심 아이디어를 초등학생들이 탐구할 수 있는 GSPBL '도전적인 질문' 1개로 변환해줘. 학생들의 흥미를 유발할 수 있도록 쉽고 재미있는 표현을 사용해줘.\n\n[핵심 아이디어]\n{core_idea}"
+                    ai_question = call_gemini(prompt)
+                    st.session_state.inquiry_question = ai_question
+                    st.session_state.page = "Design"
+                    st.rerun()
+
+def render_design_page():
+    st.header("✍️ GSPBL 통합 설계 보드")
     
-    # --- 수동 입력 ---
-    st.subheader("📝 프로젝트 기본 정보 입력")
-    st.session_state.project_theme = st.text_input("**프로젝트 대주제 (핵심 질문)**", value=st.session_state.project_theme, placeholder="예: 우리 학교 급식실은 왜 항상 시끄러울까?")
-    st.session_state.public_product = st.text_area("**최종 결과물 공개 계획**", value=st.session_state.public_product, placeholder="예: 학부모님을 초청하여 '급식실 소음 줄이기' 캠페인 결과 발표회를 연다.")
+    st.session_state.project_name = st.text_input("융합 프로젝트명", value=st.session_state.project_name)
     
-    if st.button("다음 단계로", type="primary"):
-        next_page("STEP 2")
-        st.rerun()
-
-def render_step2():
-    st.header("🚗 STEP 2: 탐구 여정 디자인하기 (AI 도움받기)")
-
-    # --- 지속적 탐구 (AI 기능 포함) ---
-    st.subheader("1. 지속적 탐구 (Sustained Inquiry)")
-    inquiry_examples = ["문제 발견 및 질문 만들기", "실태 조사 (설문, 관찰)", "전문가 인터뷰", "자료 및 문헌 조사", "해결 방안 브레인스토밍", "캠페인/시제품 기획", "산출물 제작", "수정 및 보완"]
-    st.multiselect("예시 활동을 선택하여 계획의 뼈대를 만들어보세요.", inquiry_examples, key="ms_inquiry_plan")
-    
-    current_plan = st.session_state.inquiry_plan
-    if not current_plan and st.session_state.ms_inquiry_plan:
-        current_plan = "\n".join([f"- {ex}" for ex in st.session_state.ms_inquiry_plan])
-
-    st.session_state.inquiry_plan = st.text_area("탐구 활동 계획을 간단히 작성하거나, AI의 도움을 받아 구체화하세요.", value=current_plan, height=200, key="ta_inquiry_plan")
-
-    if st.button("🤖 AI로 탐구 활동 구체화하기"):
-        if st.session_state.project_theme and st.session_state.inquiry_plan:
-            prompt = f"'{st.session_state.project_theme}'라는 주제의 초등학생 GSPBL 프로젝트가 있습니다. 아래의 간단한 탐구 활동 계획을 학생들이 실제로 수행할 수 있도록 구체적이고 창의적인 세부 활동으로 확장해주세요. 각 단계별로 어떤 디지털 도구(예: Padlet, Canva, Flip)를 활용할 수 있는지도 추천해주세요.\n\n[기존 계획]\n{st.session_state.inquiry_plan}"
-            with st.spinner("Gemini AI가 활동 계획을 상세하게 만들고 있습니다..."):
-                detailed_plan = call_gemini(prompt)
-                st.session_state.inquiry_plan = detailed_plan
+    st.subheader("탐구 질문 (또는 핵심아이디어)")
+    inquiry_col1, inquiry_col2 = st.columns([3, 1])
+    with inquiry_col1:
+        st.session_state.inquiry_question = st.text_area("탐구 질문", value=st.session_state.inquiry_question, height=100, label_visibility="collapsed")
+    with inquiry_col2:
+        if st.button("🤖 AI로 탐구 질문 생성", use_container_width=True):
+            if st.session_state.project_name:
+                prompt = f"'{st.session_state.project_name}' 프로젝트에 어울리는 GSPBL '도전적인 질문' 3개를 추천해줘. 번호 없이 한 줄씩."
+                suggestions = call_gemini(prompt)
+                st.session_state.inquiry_question = suggestions
                 st.rerun()
-        else:
-            st.warning("AI의 도움을 받으려면 STEP 1의 '프로젝트 대주제'와 '탐구 활동 계획'을 먼저 입력해주세요.")
+            else:
+                st.warning("프로젝트명을 먼저 입력해주세요.")
 
-    # --- 나머지 계획들 ---
-    st.subheader("2. 학생 의사 & 선택권 (Student Voice & Choice)")
-    st.session_state.student_choice = st.multiselect("학생들에게 어떤 선택권을 줄 수 있을까요?", options=["모둠 구성 방식", "자료 수집 방법", "산출물 형태", "역할 분담", "발표 방식"], default=st.session_state.student_choice)
-    
-    st.subheader("3. 비평과 개선 (Critique and Revision)")
-    st.session_state.revision_plan = st.text_area("피드백 및 개선 계획을 작성해주세요.", value=st.session_state.revision_plan, height=150, placeholder="예: 중간 발표회를 열어 동료들에게 '좋았던 점/개선할 점' 스티커 피드백을 받는다.")
-    
-    st.subheader("4. 성찰 (Reflection)")
-    st.session_state.reflection_plan = st.text_area("성찰 활동 계획을 작성해주세요.", value=st.session_state.reflection_plan, height=150, placeholder="예: 매일 활동 종료 5분 전, 구글 문서에 '오늘의 한 줄 학습 일기'를 작성하게 한다.")
+    st.session_state.product = st.text_input("프로젝트 산출물", value=st.session_state.product)
+
+    st.subheader("프로젝트 과정")
+    process_col1, process_col2 = st.columns([3, 1])
+    with process_col1:
+        st.session_state.process = st.text_area("프로젝트 과정", value=st.session_state.process, height=250, label_visibility="collapsed")
+    with process_col2:
+        if st.button("🤖 AI로 과정 구체화", use_container_width=True):
+            if st.session_state.inquiry_question and st.session_state.process:
+                prompt = f"'{st.session_state.inquiry_question}'이라는 탐구 질문으로 진행되는 초등 GSPBL 프로젝트입니다. 아래의 간단한 프로젝트 과정을 구체적인 활동과 디지털 도구 추천을 포함하여 상세하게 다시 작성해주세요.\n\n[기존 과정]\n{st.session_state.process}"
+                detailed_process = call_gemini(prompt)
+                st.session_state.process = detailed_process
+                st.rerun()
+            else:
+                st.warning("탐구 질문과 간단한 과정을 먼저 입력해주세요.")
+
+    st.session_state.assessment = st.text_area("과정중심 평가 계획", value=st.session_state.assessment, height=150)
+    st.session_state.competencies = st.text_input("핵심역량, 사회정서역량", value=st.session_state.competencies)
 
     st.markdown("---")
-    st.header("✨ 최종 설계도 생성")
+    st.header("✨ 최종 설계도 생성 및 저장")
     
-    # 최종 설계도 표시 및 다운로드
     final_data = {key: st.session_state[key] for key in st.session_state}
-    image_data = create_lesson_plan_image(final_data)
+    image_data = create_lesson_plan_image_table(final_data)
     if image_data:
-        st.download_button(label="🖼️ JPG로 다운로드", data=image_data, file_name=f"GSPBL_설계도.jpg", mime="image/jpeg")
+        st.download_button(label="🖼️ 수업 설계 요약표 JPG로 저장", data=image_data, file_name=f"GSPBL_설계요약표.jpg", mime="image/jpeg")
 
-    if st.button("이전 단계로"):
-        next_page("STEP 1")
+    if st.button("↩️ 처음으로 돌아가기"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        initialize_session_state()
         st.rerun()
+
 
 # --- 메인 앱 로직 ---
 def main():
     st.set_page_config(page_title="GSPBL 내비게이터", layout="wide")
-    st.title("GSPBL 수업 설계 내비게이터 🚀 (AI 버전)")
-    
     initialize_session_state()
 
-    page_map = {
-        "STEP 1": render_step1,
-        "STEP 2": render_step2,
-    }
-    page_map[st.session_state.page]()
+    if st.session_state.page == "Start":
+        render_start_page()
+    elif st.session_state.page == "Design":
+        render_design_page()
 
     footer_css = """
     <style>
-    .footer {
-        position: fixed; left: 0; bottom: 0; width: 100%;
+    .footer { position: fixed; left: 0; bottom: 0; width: 100%;
         background-color: transparent; color: #808080;
-        text-align: center; padding: 10px; font-size: 16px;
-    }
+        text-align: center; padding: 10px; font-size: 16px; }
     </style>
     <div class="footer"><p>서울가동초 백인규</p></div>
     """
