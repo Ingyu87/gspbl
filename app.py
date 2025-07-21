@@ -49,7 +49,7 @@ def load_json_data(filename):
 @st.cache_data
 def parse_achievement_standards(grade_group):
     """
-    성취수준 JSON 파일에서 교과 및 성취기준을 파싱합니다.
+    성취수준 JSON 파일에서 교과 및 성취기준을 파싱합니다. (파싱 로직 수정)
     """
     filename_map = {
         "1-2학년군": "1-2학년군_성취수준.json",
@@ -67,12 +67,37 @@ def parse_achievement_standards(grade_group):
     text = data["content"]
     subjects = {}
     
-    # 교과 목록을 찾는 정규식 수정 (교과명만 정확히 추출)
-    subject_matches = re.finditer(r'^\d+\.\s+([가-힣]+(?: 생활)?)$', text, re.MULTILINE)
-    subject_list = [(m.group(1).strip(), m.start()) for m in subject_matches]
+    # 1. '교과별 성취수준' 목차 부분만 정확히 추출
+    toc_start = text.find('Ⅲ. 교과별 성취수준')
+    if toc_start == -1:
+        return {} 
+    
+    toc_end = text.find('Ⅰ. 성취수준 개발의 이해', toc_start + 20)
+    if toc_end == -1:
+        toc_end = len(text)
+        
+    toc_text = text[toc_start:toc_end]
 
-    for i, (subject_name, start_index) in enumerate(subject_list):
-        end_index = subject_list[i+1][1] if i + 1 < len(subject_list) else len(text)
+    # 2. 해당 목차에서만 교과 목록 추출
+    subject_matches = re.finditer(r'^\d+\.\s+([가-힣]+(?: 생활)?)\t\d+', toc_text, re.MULTILINE)
+    subject_list = [m.group(1).strip() for m in subject_matches]
+
+    # 3. 추출된 교과 목록을 기준으로 본문에서 성취기준 탐색
+    for i, subject_name in enumerate(subject_list):
+        # 본문 제목 형식 (예: "1. 국어")
+        start_match = re.search(f'^\\d+\\.\\s{re.escape(subject_name)}$', text, re.MULTILINE)
+        if not start_match:
+            continue
+        
+        start_index = start_match.end()
+        
+        end_index = len(text)
+        if i + 1 < len(subject_list):
+            next_subject_name = subject_list[i+1]
+            next_start_match = re.search(f'^\\d+\\.\\s{re.escape(next_subject_name)}$', text, re.MULTILINE)
+            if next_start_match:
+                end_index = next_start_match.start()
+
         subject_text = text[start_index:end_index]
         
         standards = re.findall(r'(\[\d{1,2}[가-힣]{1,2}\d{2}-\d{2}\])([^\[]+)', subject_text)
@@ -235,30 +260,34 @@ def render_step1():
     st.caption("프로젝트의 핵심이 되는 탐구 질문과 최종 결과물을 설정합니다.")
     
     st.subheader("탐구 질문 (Challenging Problem or Question)")
+    
+    with st.expander("🤖 AI 도우미: 탐구 질문 만들기", expanded=True):
+        ai_keyword = st.text_input("질문 아이디어를 얻고 싶은 분야(키워드)를 입력하세요.", placeholder="예: 기후 위기, 우리 동네 문제, 재활용")
+        
+        if st.button("입력한 분야로 질문 제안받기", use_container_width=True):
+            if ai_keyword:
+                prompt = f"초등학생 대상 GSPBL 프로젝트를 위한 '탐구 질문'을 생성해줘. 핵심 키워드는 '{ai_keyword}'야. 학생들이 흥미를 느끼고 깊이 탐구하고 싶게 만드는, 정답이 없는 질문 5개를 제안해줘. 번호 없이 한 줄씩만."
+                suggestions = call_gemini(prompt)
+                st.session_state.project_title = suggestions
+                st.session_state.question_analysis = "" # 새로운 제안 시 분석 내용 초기화
+                st.rerun()
+            else:
+                st.warning("먼저 키워드를 입력해주세요.")
+    
     st.session_state.project_title = st.text_area(
-        "프로젝트를 관통하는 핵심 질문을 입력하세요.",
+        "프로젝트를 관통하는 핵심 질문을 입력하거나 AI 제안을 수정하세요.",
         value=st.session_state.project_title,
-        placeholder="예: 우리 학교 급식실은 왜 항상 시끄러울까?",
         height=150,
         label_visibility="collapsed"
     )
-    
-    with st.expander("🤖 AI 도우미"):
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("질문 아이디어 제안받기", use_container_width=True):
-                prompt = "초등학생 대상 GSPBL 프로젝트에 활용할 수 있는 흥미로운 '탐구 질문'의 예시를 5개만 제안해줘. 학생들이 자신의 삶과 연결하여 깊이 탐구할 수 있는, 정답이 없는 질문이어야 해. 번호 없이 한 줄씩만."
-                suggestions = call_gemini(prompt)
-                st.session_state.project_title = suggestions
-                st.rerun()
-        with col2:
-            if st.button("입력한 질문 유형 분석하기", use_container_width=True):
-                if st.session_state.project_title:
-                    prompt = f"다음은 초등학생 대상 프로젝트 수업의 탐구 질문이야. 이 질문이 어떤 유형(예: 문제 해결형, 원인 탐구형, 창작 표현형, 찬반 논쟁형 등)에 해당하는지 분석하고, 왜 그렇게 생각하는지 간략하게 설명해줘.\n\n질문: \"{st.session_state.project_title}\""
-                    analysis = call_gemini(prompt)
-                    st.session_state.question_analysis = analysis
-                else:
-                    st.warning("먼저 탐구 질문을 입력해주세요.")
+
+    if st.button("현재 질문 유형 분석하기", use_container_width=True):
+        if st.session_state.project_title:
+            prompt = f"다음은 초등학생 대상 프로젝트 수업의 탐구 질문이야. 이 질문이 어떤 유형(예: 문제 해결형, 원인 탐구형, 창작 표현형, 찬반 논쟁형 등)에 해당하는지 분석하고, 왜 그렇게 생각하는지 간략하게 설명해줘.\n\n질문: \"{st.session_state.project_title}\""
+            analysis = call_gemini(prompt)
+            st.session_state.question_analysis = analysis
+        else:
+            st.warning("먼저 탐구 질문을 입력해주세요.")
     
     if st.session_state.question_analysis:
         st.info(st.session_state.question_analysis)
