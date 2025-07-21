@@ -47,9 +47,9 @@ def load_json_data(filename):
         return None
 
 @st.cache_data
-def parse_achievement_standards(grade_group):
+def get_standards_for_subject(grade_group, subject_name):
     """
-    성취수준 JSON 파일에서 교과 및 성취기준을 파싱합니다. (파싱 로직 수정)
+    선택된 학년군과 교과에 해당하는 성취기준 목록만 파싱합니다.
     """
     filename_map = {
         "1-2학년군": "1-2학년군_성취수준.json",
@@ -57,59 +57,41 @@ def parse_achievement_standards(grade_group):
         "5-6학년군": "5-6학년군_성취수준.json",
     }
     filename = filename_map.get(grade_group)
-    if not filename:
-        return {}
+    if not filename: return []
 
     data = load_json_data(filename)
-    if not data or "content" not in data:
-        return {}
+    if not data or "content" not in data: return []
 
     text = data["content"]
-    subjects = {}
     
-    # 1. '교과별 성취수준' 목차 부분만 정확히 추출
-    toc_start = text.find('Ⅲ. 교과별 성취수준')
-    if toc_start == -1:
-        return {} 
+    # 교과 목록 (목차 기준)
+    all_subjects_in_file = re.findall(r'^\d+\.\s+([가-힣]+(?: 생활)?)\t\d+', text, re.MULTILINE)
     
-    # 목차의 끝을 찾기 위해 다음 대제목을 탐색
-    toc_end_markers = ['Ⅰ. 성취수준 개발의 이해', 'Ⅱ. 성취수준 활용']
-    toc_end = len(text)
-    for marker in toc_end_markers:
-        found_pos = text.find(marker, toc_start + 20)
-        if found_pos != -1:
-            toc_end = min(toc_end, found_pos)
-        
-    toc_text = text[toc_start:toc_end]
+    # 본문에서 해당 교과 영역 찾기
+    start_match = re.search(f'^\\d+\\.\\s{re.escape(subject_name)}$', text, re.MULTILINE)
+    if not start_match: return []
 
-    # 2. 해당 목차에서만 교과 목록 추출 (더 정확한 정규식)
-    subject_matches = re.finditer(r'^\d+\.\s+([가-힣]+(?: 생활)?)\s*\t\s*\d+', toc_text, re.MULTILINE)
-    subject_list = [m.group(1).strip() for m in subject_matches]
+    start_index = start_match.end()
+    
+    # 다음 교과 시작 전까지를 해당 교과 내용으로 간주
+    end_index = len(text)
+    current_subject_index_in_list = -1
+    for i, sub in enumerate(all_subjects_in_file):
+        if sub == subject_name:
+            current_subject_index_in_list = i
+            break
+            
+    if current_subject_index_in_list != -1 and current_subject_index_in_list + 1 < len(all_subjects_in_file):
+        next_subject_name = all_subjects_in_file[current_subject_index_in_list + 1]
+        next_start_match = re.search(f'^\\d+\\.\\s{re.escape(next_subject_name)}$', text, re.MULTILINE)
+        if next_start_match:
+            end_index = next_start_match.start()
 
-    # 3. 추출된 교과 목록을 기준으로 본문에서 성취기준 탐색
-    for i, subject_name in enumerate(subject_list):
-        # 본문 제목 형식 (예: "1. 국어")
-        start_match = re.search(f'^\\d+\\.\\s{re.escape(subject_name)}$', text, re.MULTILINE)
-        if not start_match:
-            continue
-        
-        start_index = start_match.end()
-        
-        end_index = len(text)
-        if i + 1 < len(subject_list):
-            next_subject_name = subject_list[i+1]
-            next_start_match = re.search(f'^\\d+\\.\\s{re.escape(next_subject_name)}$', text, re.MULTILINE)
-            if next_start_match:
-                end_index = next_start_match.start()
-
-        subject_text = text[start_index:end_index]
-        
-        standards = re.findall(r'(\[\d{1,2}[가-힣]{1,2}\d{2}-\d{2}\])([^\[]+)', subject_text)
-        
-        if standards:
-            subjects[subject_name] = {f"{code} {desc.strip()}": f"{code} {desc.strip()}" for code, desc in standards}
-
-    return subjects
+    subject_text = text[start_index:end_index]
+    
+    standards = re.findall(r'(\[\d{1,2}[가-힣]{1,2}\d{2}-\d{2}\])([^\[]+)', subject_text)
+    
+    return [f"{code} {desc.strip()}" for code, desc in standards]
 
 
 # --- 3. AI 및 이미지 생성 함수 ---
@@ -235,7 +217,7 @@ def initialize_session_state():
 
     defaults = {
         "project_title": "", "public_product": "",
-        "grade_group": "5-6학년군", "selected_subject": None,
+        "grade_group": "3-4학년군", "selected_subject": None,
         "selected_standards": [], 
         "selected_core_competencies": [], "selected_sel_competencies": [],
         "sustained_inquiry": "", "student_voice_choice": [],
@@ -321,29 +303,46 @@ def render_step2():
 
     st.subheader("교과 성취기준 연결")
     
+    # 학년군별 교과목 목록을 하드코딩하여 안정성 확보
+    subject_map = {
+        "1-2학년군": ["국어", "수학", "바른 생활", "슬기로운 생활", "즐거운 생활"],
+        "3-4학년군": ["국어", "사회", "도덕", "수학", "과학", "체육", "음악", "미술", "영어"],
+        "5-6학년군": ["국어", "사회", "도덕", "수학", "과학", "실과", "체육", "음악", "미술", "영어"]
+    }
+    
+    def on_grade_group_change():
+        # 학년군이 바뀌면 선택된 교과와 성취기준 초기화
+        st.session_state.selected_subject = None
+        st.session_state.selected_standards = []
+
     grade_group = st.radio(
         "학년군 선택",
-        ["1-2학년군", "3-4학년군", "5-6학년군"],
-        index=["1-2학년군", "3-4학년군", "5-6학년군"].index(st.session_state.grade_group),
+        options=subject_map.keys(),
+        index=list(subject_map.keys()).index(st.session_state.grade_group),
         horizontal=True,
-        key="grade_group"
+        key="grade_group",
+        on_change=on_grade_group_change
     )
 
-    achievement_data = parse_achievement_standards(grade_group)
-    
-    if not achievement_data:
-        st.warning(f"'{grade_group}'의 성취기준 데이터를 불러오는 데 실패했습니다. 'data' 폴더의 JSON 파일을 확인해주세요.")
-    else:
-        subjects = list(achievement_data.keys())
-        selected_subject = st.selectbox("교과 선택", options=subjects)
+    subjects_for_grade = subject_map.get(grade_group, [])
+    selected_subject = st.selectbox(
+        "교과 선택", 
+        options=subjects_for_grade, 
+        key="selected_subject"
+    )
 
-        if selected_subject:
-            standards = achievement_data[selected_subject]
+    if selected_subject:
+        standards = get_standards_for_subject(grade_group, selected_subject)
+        if standards:
             st.session_state.selected_standards = st.multiselect(
                 "프로젝트와 관련된 성취기준을 모두 선택하세요.",
-                options=list(standards.values()),
-                default=st.session_state.selected_standards
+                options=standards,
+                default=st.session_state.selected_standards,
+                key="multiselect_standards"
             )
+        else:
+            st.warning(f"'{selected_subject}' 교과의 성취기준을 불러오는 데 실패했습니다.")
+
 
     st.markdown("---")
 
@@ -496,7 +495,7 @@ def render_step4():
         "🧭 지속적 탐구": "sustained_inquiry",
         "📈 과정중심 평가": "process_assessment",
         "🗣️ 학생의 의사 & 선택권": "student_voice_choice",
-        "🔄 비평과 개선": "critique_revision",
+        "� 비평과 개선": "critique_revision",
         "🤔 성찰": "reflection"
     }
 
