@@ -3,7 +3,7 @@ import json
 import io
 import os
 import re
-import pandas as pd  # 엑셀 생성을 위해 pandas 임포트
+import pandas as pd
 import google.generativeai as genai
 
 # --- 1. 초기 설정 및 API 키 구성 ---
@@ -70,12 +70,8 @@ def call_gemini(prompt, show_spinner=True):
     except Exception as e:
         return f"AI 응답 생성에 실패했습니다. API 키가 유효한지 확인해주세요. 오류: {e}"
 
-# >>>>> 🌟 JPG 이미지 생성 함수를 엑셀 생성 함수로 교체 🌟 <<<<<
 def create_excel_download():
-    """세션 데이터를 바탕으로 엑셀 파일을 생성합니다."""
     data = st.session_state
-
-    # 엑셀에 들어갈 내용을 순서대로 정리
     plan_data = {
         "🎯 탐구 질문": data.get('project_title', ''),
         "📢 최종 결과물 공개": data.get('public_product', ''),
@@ -88,25 +84,16 @@ def create_excel_download():
         "🔄 비평과 개선": data.get('critique_revision', ''),
         "🤔 성찰": data.get('reflection', '')
     }
-
-    # pandas DataFrame으로 변환
     df = pd.DataFrame(list(plan_data.items()), columns=['항목', '내용'])
-
-    # 엑셀 파일을 메모리 상에서 생성
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='GSPBL_수업설계안')
-        
-        # 보기 좋게 컬럼 너비 자동 조절
         worksheet = writer.sheets['GSPBL_수업설계안']
         worksheet.column_dimensions['A'].width = 25
         worksheet.column_dimensions['B'].width = 80
-        
-        # 내용이 긴 셀은 자동으로 줄바꿈되도록 설정
         for row in worksheet.iter_rows(min_row=2, min_col=2, max_col=2):
             for cell in row:
-                cell.alignment = cell.alignment.copy(wrap_text=True)
-
+                cell.alignment = cell.alignment.copy(wrap_text=True, vertical='top')
     processed_data = output.getvalue()
     return processed_data
 
@@ -205,7 +192,7 @@ def render_step2():
         sel_competencies = ["자기 인식 역량", "자기 관리 역량", "사회적 인식 역량", "관계 기술 역량", "책임 있는 의사결정 역량"]
         st.session_state.selected_sel_competencies = [comp for comp in sel_competencies if st.checkbox(comp, value=comp in st.session_state.selected_sel_competencies, key=f"sel_{comp}")]
 
-# >>>>> 🌟 학년군 오류 해결을 위해 수정된 함수 🌟 <<<<<
+# >>>>> 🌟 최종 결과물 연계를 위해 최종 수정된 함수 🌟 <<<<<
 def render_step3():
     st.header("🚗 STEP 3. 탐구 여정 디자인하기")
     st.caption("학생들이 경험할 구체적인 탐구, 피드백, 성찰 활동을 계획합니다.")
@@ -218,24 +205,27 @@ def render_step3():
         if st.button("선택한 활동으로 AI 과정 구체화하기"):
             if selected_tags and st.session_state.project_title:
                 context_title = st.session_state.project_title
+                context_product = st.session_state.public_product  # 최종 결과물 정보 추가
                 context_standards = "\n".join(f"- {s}" for s in st.session_state.selected_standards)
                 context_core_comp = ", ".join(st.session_state.selected_core_competencies)
                 context_sel_comp = ", ".join(st.session_state.selected_sel_competencies)
                 context_tags = ", ".join(selected_tags)
 
-                # >>>>> 수정된 프롬프트: 학년군 언급을 빼고, 성취기준에 집중하도록 변경 <<<<<
                 prompt = (
                     "당신은 초등 교육과정 설계 전문가입니다. GSPBL 모델에 기반하여 '지속적 탐구' 과정을 구체적으로 설계해주세요.\n\n"
                     "--- 프로젝트 기본 정보 ---\n"
                     f"**탐구 질문:** {context_title}\n"
+                    f"**최종 결과물:** {context_product}\n"  # 프롬프트에 최종 결과물 추가
                     f"**연계 성취기준:**\n{context_standards}\n"
                     f"**함양할 핵심역량:** {context_core_comp}\n"
                     f"**함양할 사회정서역량:** {context_sel_comp}\n"
                     f"**포함할 주요 활동:** {context_tags}\n\n"
                     "--- 요구 사항 ---\n"
-                    "1. 위의 **모든 기본 정보(특히 연계 성취기준과 핵심역량)**를 반드시 고려하여, 이 프로젝트가 초등학생 발달 단계 중 어느 수준(예: 저학년/중학년/고학년)에 적합한지 **스스로 판단**하여 학생들이 단계별로 무엇을 탐구하고 만들어갈지 구체적인 과정안을 작성해주세요.\n"
-                    "2. 각 단계별로 예상되는 차시와 함께, 학생들이 사용할 만한 구체적인 디지털 도구를 추천해주세요.\n"
-                    "3. 전체적인 흐름이 논리적으로 연결되도록 설계해주세요."
+                    "1. **매우 중요:** 당신이 설계하는 모든 탐구 과정은 최종적으로 위에 명시된 **'최종 결과물'을 완성하고 공개하는 방향으로 논리적으로 이어져야 합니다.**\n"
+                    "2. 제시된 **성취기준과 학생 활동 목록의 복잡성**을 보고, 이 프로젝트가 초등학생 발달 단계 중 어느 수준(예: 저학년/중학년/고학년)에 적합한지 **스스로 판단**하여 그 수준에 맞는 구체적인 과정안을 작성해주세요.\n"
+                    "3. **답변에 학년(예: 3-4학년)을 직접적으로 언급하지 마세요.** 대신, '학생들은 ~을 할 수 있습니다' 와 같이 활동 중심으로 서술해주세요.\n"
+                    "4. 각 단계별로 예상되는 차시와 함께, 학생들이 사용할 만한 구체적인 디지털 도구를 추천해주세요.\n"
+                    "5. 전체적인 흐름이 논리적으로 연결되도록 설계해주세요."
                 )
                 
                 detailed_process = call_gemini(prompt)
@@ -277,7 +267,6 @@ def render_step3():
             else: st.warning("STEP 1의 탐구 질문을 먼저 입력해주세요.")
         st.session_state.reflection = st.text_area("성찰 계획", value=st.session_state.reflection, placeholder="AI 제안을 받거나 직접 입력하세요.", height=200, label_visibility="collapsed")
 
-# >>>>> 🌟 엑셀 다운로드 기능으로 교체된 함수 🌟 <<<<<
 def render_step4():
     st.header("✨ STEP 4. 최종 설계도 확인 및 내보내기")
     st.caption("입력된 모든 내용을 하나의 문서로 통합하여 확인하고, 저장 및 공유할 수 있습니다.")
@@ -328,7 +317,6 @@ def render_step4():
         use_container_width=True,
         type="primary"
     )
-
 
 # --- 6. 메인 앱 로직 ---
 def main():
