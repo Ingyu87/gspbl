@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
-# Gemini API 키 설정 (보안 강화)
+# Gemini API 키 설정
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except (FileNotFoundError, KeyError):
@@ -26,7 +26,7 @@ if GEMINI_API_KEY:
     except Exception as e:
         st.error(f"API 키 설정 중 오류가 발생했습니다: {e}")
 else:
-    st.warning("Gemini API 키가 설정되지 않았습니다. AI 제안 기능을 사용하려면 앱 설정(Secrets)에 키를 추가하거나 코드에 직접 입력해주세요.")
+    st.warning("Gemini API 키가 설정되지 않았습니다. AI 기능을 사용하려면 앱 설정(Secrets)에 키를 추가하거나 코드에 직접 입력해주세요.")
 
 
 # --- 2. 데이터 로드 및 처리 함수 ---
@@ -63,26 +63,68 @@ def call_gemini(prompt, show_spinner=True):
     except Exception as e:
         return f"AI 응답 생성에 실패했습니다. API 키가 유효한지 확인해주세요. 오류: {e}"
 
+# 🌟🌟🌟 AI 요약 함수 추가 🌟🌟🌟
+def summarize_text_for_image(text, max_chars=400):
+    """이미지 생성을 위해 긴 텍스트를 AI로 요약하거나 단순 축약합니다."""
+    if not isinstance(text, str) or len(text) <= max_chars:
+        return text
+
+    # API 키가 없으면 단순 축약
+    if not GEMINI_API_KEY:
+        return text[:max_chars] + "..."
+
+    try:
+        # 이미지 생성 중에는 별도의 스피너 없이 내부적으로 호출
+        prompt = f"다음 텍스트를 최종 보고서의 요약표에 넣을 수 있도록 200자 내외의 핵심 내용으로 매우 간결하게 요약해줘:\n\n---\n{text}\n---"
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception:
+        # API 실패 시 안전하게 단순 축약으로 대체
+        return text[:max_chars] + "..."
+
+# 🌟🌟🌟 이미지 생성 함수 수정 🌟🌟🌟
 def create_lesson_plan_images():
-    """세션 데이터를 바탕으로 2페이지 분량의 '수업 설계도' JPG 이미지를 생성합니다."""
-    data = st.session_state
+    """세션 데이터를 '요약'하여 2페이지 분량의 이미지를 생성합니다."""
+    original_data = st.session_state
     
+    # 1. 이미지에 표시할 데이터만 따로 요약/가공
+    display_data = {}
+    fields_to_summarize = [
+        'sustained_inquiry', 'process_assessment', 
+        'critique_revision', 'reflection', 'public_product'
+    ]
+    for key, value in original_data.items():
+        if key in fields_to_summarize:
+            display_data[key] = summarize_text_for_image(value)
+        elif key == 'selected_standards' and isinstance(value, list):
+            # 성취기준은 4개까지만 보여주고 나머지는 개수로 표시
+            if len(value) > 4:
+                display_data[key] = value[:4] + [f"...외 {len(value) - 4}개 항목"]
+            else:
+                display_data[key] = value
+        else:
+            # 그 외의 데이터는 그대로 복사
+            display_data[key] = value
+
+    # 2. 요약된 데이터를 기반으로 페이지별 내용 구성
     rows_page1 = {
-        "🎯 탐구 질문": data.get('project_title', ''),
-        "📢 최종 결과물 공개": data.get('public_product', ''),
-        "📚 교과 성취기준": "\n".join(data.get('selected_standards', [])),
-        "💡 핵심역량": "\n".join(f"• {c}" for c in data.get('selected_core_competencies', [])),
-        "🌱 사회정서 역량": "\n".join(f"• {c}" for c in data.get('selected_sel_competencies', [])),
+        "🎯 탐구 질문": display_data.get('project_title', ''),
+        "📢 최종 결과물 공개": display_data.get('public_product', ''),
+        "📚 교과 성취기준": "\n".join(display_data.get('selected_standards', [])),
+        "💡 핵심역량": "\n".join(f"• {c}" for c in display_data.get('selected_core_competencies', [])),
+        "🌱 사회정서 역량": "\n".join(f"• {c}" for c in display_data.get('selected_sel_competencies', [])),
     }
     
     rows_page2 = {
-        "🧭 지속적 탐구": data.get('sustained_inquiry', ''),
-        "📈 과정중심 평가": data.get('process_assessment', ''),
-        "🗣️ 학생의 의사 & 선택권": "\n".join(f"• {c}" for c in data.get('student_voice_choice', [])),
-        "🔄 비평과 개선": data.get('critique_revision', ''),
-        "🤔 성찰": data.get('reflection', '')
+        "🧭 지속적 탐구": display_data.get('sustained_inquiry', ''),
+        "📈 과정중심 평가": display_data.get('process_assessment', ''),
+        "🗣️ 학생의 의사 & 선택권": "\n".join(f"• {c}" for c in display_data.get('student_voice_choice', [])),
+        "🔄 비평과 개선": display_data.get('critique_revision', ''),
+        "🤔 성찰": display_data.get('reflection', '')
     }
 
+    # 3. 이미지 생성 (기존 로직과 거의 동일)
     images = []
     for page_num, rows in enumerate([rows_page1, rows_page2], 1):
         width, height = 1200, 1700
@@ -248,8 +290,6 @@ def render_step1():
         else:
             st.warning("탐구 질문을 먼저 입력해주세요.")
 
-
-# >>>>> 🌟 여기가 핵심 수정 부분입니다 🌟 <<<<<
 def render_step2():
     st.header("🧭 STEP 2. 학습 나침반 준비하기")
     st.caption("프로젝트를 통해 달성할 교과 성취기준과 핵심 역량을 명확히 설정합니다.")
@@ -262,7 +302,6 @@ def render_step2():
         "5-6학년군": []
     }
 
-    # 학년군 변경 시, 선택된 성취기준은 그대로 두고 과목만 초기화
     def on_grade_change():
         st.session_state.selected_subject = VALID_SUBJECTS[st.session_state.grade_group][0] if VALID_SUBJECTS[st.session_state.grade_group] else ""
 
@@ -300,8 +339,6 @@ def render_step2():
                 if current_subject_standards:
                     st.write(f"**'{selected_subject}' 과목의 성취기준 목록입니다. 프로젝트에 연계할 기준을 모두 선택하세요.**")
                     
-                    # >>>>> 수정된 부분 <<<<<
-                    # default 값으로 들어갈 리스트를 현재 options에 있는 것들로만 필터링
                     default_selection = [
                         s for s in st.session_state.selected_standards 
                         if s in current_subject_standards
@@ -310,11 +347,10 @@ def render_step2():
                     selected_in_current_subject = st.multiselect(
                         "성취기준 선택",
                         options=current_subject_standards,
-                        default=default_selection, # 필터링된 default 값을 사용
+                        default=default_selection,
                         label_visibility="collapsed"
                     )
 
-                    # --- 누적 로직 (기존과 동일하지만 이제 오류 없이 동작) ---
                     standards_from_other_subjects = [
                         s for s in st.session_state.selected_standards 
                         if s not in current_subject_standards
@@ -368,8 +404,6 @@ def render_step2():
                 st.caption(f" L {desc}")
                 selected_sel.append(comp)
         st.session_state.selected_sel_competencies = selected_sel
-# >>>>> 🌟 수정 부분 끝 🌟 <<<<<
-
 
 def render_step3():
     st.header("🚗 STEP 3. 탐구 여정 디자인하기")
@@ -389,7 +423,7 @@ def render_step3():
             if selected_tags and st.session_state.project_title:
                 prompt = (f"초등학생 대상 GSPBL 프로젝트의 '지속적 탐구' 과정을 구체적으로 설계해줘.\n"
                           f"프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야.\n"
-                          f"다음과 같은 활동들을 포함해서, 몇차시로 진행할지, 각 단계별로 학생들이 무엇을 할지, 어떤 디지털 도구를 사용하면 좋을지 예시를 들어 간단하게 작성해줘.\n\n"
+                          f"다음과 같은 활동들을 포함해서, 각 단계별로 학생들이 무엇을 할지, 어떤 디지털 도구를 사용하면 좋을지 예시를 들어 간단한 과정안(1차시 : 40분)을 작성해줘.\n\n"
                           f"포함할 활동: {', '.join(selected_tags)}")
                 detailed_process = call_gemini(prompt)
                 st.session_state.sustained_inquiry = detailed_process
@@ -530,9 +564,13 @@ def render_step4():
         if st.session_state.ai_feedback:
             st.markdown(st.session_state.ai_feedback)
 
-    image_data_list = create_lesson_plan_images()
+    # 🌟🌟🌟 이미지 생성 시 스피너 및 안내 문구 추가 🌟🌟🌟
+    with st.spinner("요약 이미지를 생성하고 있습니다... (내용이 길 경우 AI 요약이 포함됩니다)"):
+        image_data_list = create_lesson_plan_images()
+
     if image_data_list:
         st.subheader("🖼️ 수업 설계 요약표 저장")
+        st.caption("ℹ️ 내용이 긴 항목(지속적 탐구 등)과 성취기준 개수가 많은 경우, 이미지에 맞게 요약/축약되어 표시됩니다.")
         col1, col2 = st.columns(2)
         with col1:
             st.download_button(
