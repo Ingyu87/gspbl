@@ -1,10 +1,9 @@
 import streamlit as st
 import json
-from PIL import Image, ImageDraw, ImageFont
 import io
-import textwrap
 import os
 import re
+import pandas as pd  # 엑셀 생성을 위해 pandas 임포트
 import google.generativeai as genai
 
 # --- 1. 초기 설정 및 API 키 구성 ---
@@ -32,189 +31,84 @@ else:
 
 # --- 2. 데이터 로드 및 처리 함수 ---
 def parse_5_6_standards_text(text_content):
-    """긴 텍스트에서 성취기준 데이터를 추출하여 JSON 리스트 형식으로 변환합니다."""
     parsed_data = []
-    
-    subject_map = {
-        '국': '국어', '사': '사회', '도': '도덕', '수': '수학',
-        '과': '과학', '실': '실과', '체': '체육', '음': '음악',
-        '미': '미술', '영': '영어'
-    }
-    
+    subject_map = { '국': '국어', '사': '사회', '도': '도덕', '수': '수학', '과': '과학', '실': '실과', '체': '체육', '음': '음악', '미': '미술', '영': '영어' }
     pattern = re.compile(r'\[(6([가-힣]{1,2})\d{2}-\d{2})\]\s(.+)')
-    
     lines = text_content.split('\n')
     for line in lines:
         match = pattern.match(line.strip())
         if match:
-            full_code = match.group(1)
-            subject_abbr = match.group(2)
-            standard_text = match.group(3).strip()
-            
+            full_code, subject_abbr, standard_text = match.groups()
             subject_full = subject_map.get(subject_abbr)
-            
             if subject_full:
-                parsed_data.append({
-                    "학년군": "5~6",
-                    "교과": subject_full,
-                    "영역": "",
-                    "성취기준_설명": "",
-                    "학습_요소": "",
-                    "성취기준_코드": f"[{full_code}]",
-                    "성취기준": standard_text
-                })
+                parsed_data.append({ "학년군": "5~6", "교과": subject_full, "성취기준_코드": f"[{full_code}]", "성취기준": standard_text.strip() })
     return parsed_data
 
 @st.cache_data
 def load_json_data(filename):
-    """'data' 폴더에서 JSON 파일을 로드하고, 5-6학년군 데이터는 파싱합니다."""
     filepath = os.path.join('data', filename)
     if not os.path.exists(filepath):
-        st.error(f"'{filepath}' 파일을 찾을 수 없습니다. 'data' 폴더 안에 있는지 확인해주세요.")
-        return None
+        st.error(f"'{filepath}' 파일을 찾을 수 없습니다. 'data' 폴더 안에 있는지 확인해주세요."); return None
     try:
         with open(filepath, 'r', encoding='utf-8-sig') as f:
             data = json.load(f)
-            
-            if isinstance(data, dict) and 'content' in data:
-                return parse_5_6_standards_text(data['content'])
-            elif isinstance(data, list):
-                return data
-            else:
-                st.error(f"'{filepath}' 파일의 형식이 올바르지 않습니다.")
-                return None
-                
+            if isinstance(data, dict) and 'content' in data: return parse_5_6_standards_text(data['content'])
+            elif isinstance(data, list): return data
+            else: st.error(f"'{filepath}' 파일의 형식이 올바르지 않습니다."); return None
     except Exception as e:
-        st.error(f"'{filepath}' 파일 로딩 또는 파싱 중 오류: {e}")
-        return None
+        st.error(f"'{filepath}' 파일 로딩 또는 파싱 중 오류: {e}"); return None
 
-# --- 3. AI 및 이미지 생성 함수 ---
+# --- 3. AI 및 엑셀 생성 함수 ---
+
 def call_gemini(prompt, show_spinner=True):
-    if not GEMINI_API_KEY:
-        return "⚠️ AI 기능 비활성화: Gemini API 키가 설정되지 않았습니다."
+    if not GEMINI_API_KEY: return "⚠️ AI 기능 비활성화: Gemini API 키가 설정되지 않았습니다."
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
-        if show_spinner:
-            with st.spinner("🚀 Gemini AI가 선생님의 아이디어를 확장하고 있어요..."):
-                response = model.generate_content(prompt)
-                return response.text
-        else:
+        with st.spinner("🚀 Gemini AI가 선생님의 아이디어를 확장하고 있어요..."):
             response = model.generate_content(prompt)
             return response.text
     except Exception as e:
         return f"AI 응답 생성에 실패했습니다. API 키가 유효한지 확인해주세요. 오류: {e}"
 
-def summarize_text_for_image(text, max_chars=400):
-    if not isinstance(text, str) or len(text) <= max_chars:
-        return text
-    if not GEMINI_API_KEY:
-        return text[:max_chars] + "..."
-    try:
-        prompt = f"다음 텍스트를 최종 보고서의 요약표에 넣을 수 있도록 200자 내외의 핵심 내용으로 매우 간결하게 요약해줘:\n\n---\n{text}\n---"
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        return response.text.strip()
-    except Exception:
-        return text[:max_chars] + "..."
+# >>>>> 🌟 JPG 이미지 생성 함수를 엑셀 생성 함수로 교체 🌟 <<<<<
+def create_excel_download():
+    """세션 데이터를 바탕으로 엑셀 파일을 생성합니다."""
+    data = st.session_state
 
-# >>>>> 🌟 글씨 잘림 문제 해결을 위해 수정된 함수 🌟 <<<<<
-def create_lesson_plan_images():
-    original_data = st.session_state
-    
-    display_data = {}
-    fields_to_summarize = [
-        'sustained_inquiry', 'process_assessment', 
-        'critique_revision', 'reflection', 'public_product'
-    ]
-    for key, value in original_data.items():
-        if key in fields_to_summarize:
-            display_data[key] = summarize_text_for_image(value)
-        elif key == 'selected_standards' and isinstance(value, list):
-            if len(value) > 4:
-                display_data[key] = value[:4] + [f"...외 {len(value) - 4}개 항목"]
-            else:
-                display_data[key] = value
-        else:
-            display_data[key] = value
-
-    rows_page1 = {
-        "🎯 탐구 질문": display_data.get('project_title', ''),
-        "📢 최종 결과물 공개": display_data.get('public_product', ''),
-        "📚 교과 성취기준": "\n".join(display_data.get('selected_standards', [])),
-        "💡 핵심역량": "\n".join(f"• {c}" for c in display_data.get('selected_core_competencies', [])),
-        "🌱 사회정서 역량": "\n".join(f"• {c}" for c in display_data.get('selected_sel_competencies', [])),
-    }
-    
-    rows_page2 = {
-        "🧭 지속적 탐구": display_data.get('sustained_inquiry', ''),
-        "📈 과정중심 평가": display_data.get('process_assessment', ''),
-        "🗣️ 학생의 의사 & 선택권": "\n".join(f"• {c}" for c in display_data.get('student_voice_choice', [])),
-        "🔄 비평과 개선": display_data.get('critique_revision', ''),
-        "🤔 성찰": display_data.get('reflection', '')
+    # 엑셀에 들어갈 내용을 순서대로 정리
+    plan_data = {
+        "🎯 탐구 질문": data.get('project_title', ''),
+        "📢 최종 결과물 공개": data.get('public_product', ''),
+        "📚 교과 성취기준": "\n".join(f"• {s}" for s in data.get('selected_standards', [])),
+        "💡 핵심역량": "\n".join(f"• {c}" for c in data.get('selected_core_competencies', [])),
+        "🌱 사회정서 역량": "\n".join(f"• {c}" for c in data.get('selected_sel_competencies', [])),
+        "🧭 지속적 탐구": data.get('sustained_inquiry', ''),
+        "📈 과정중심 평가": data.get('process_assessment', ''),
+        "🗣️ 학생의 의사 & 선택권": "\n".join(f"• {c}" for c in data.get('student_voice_choice', [])),
+        "🔄 비평과 개선": data.get('critique_revision', ''),
+        "🤔 성찰": data.get('reflection', '')
     }
 
-    images = []
-    for page_num, rows in enumerate([rows_page1, rows_page2], 1):
-        width, height = 1200, 1700
-        margin = 50
-        bg_color, header_bg_color, line_color = (255, 255, 255), (230, 245, 255), (200, 200, 200)
-        font_path = os.path.join('data', "Pretendard-Regular.ttf")
-        if not os.path.exists(font_path):
-            st.error(f"`{font_path}` 폰트 파일을 찾을 수 없습니다."); return []
-        try:
-            title_font = ImageFont.truetype(font_path, 40)
-            header_font = ImageFont.truetype(font_path, 28)
-            body_font = ImageFont.truetype(font_path, 22)
-        except IOError:
-            st.error(f"`{font_path}` 폰트 파일을 열 수 없습니다."); return []
+    # pandas DataFrame으로 변환
+    df = pd.DataFrame(list(plan_data.items()), columns=['항목', '내용'])
+
+    # 엑셀 파일을 메모리 상에서 생성
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='GSPBL_수업설계안')
         
-        img = Image.new('RGB', (width, height), color=bg_color)
-        draw = ImageDraw.Draw(img)
-
-        def draw_multiline_text_in_box(text, font, box, text_color='black', h_align='left', v_align='top'):
-            x, y, w, h = box
-            lines = [l for line in text.split('\n') for l in textwrap.wrap(line, width=int(w / (font.size * 0.55)), break_long_words=True, replace_whitespace=False) or ['']]
-            line_height = font.getbbox("A")[3] + 6
-            total_text_height = len(lines) * line_height
-            y_text = y + 15 if v_align != 'center' else y + (h - total_text_height) / 2
-            for line in lines:
-                line_width = draw.textlength(line, font=font)
-                x_text = x + 15 if h_align != 'center' else x + (w - line_width) / 2
-                # This check is now safe because the box height is pre-calculated correctly
-                if y_text + line_height <= y + h + 5: # Add a small buffer of 5px
-                    draw.text((x_text, y_text), line, font=font, fill=text_color)
-                    y_text += line_height
+        # 보기 좋게 컬럼 너비 자동 조절
+        worksheet = writer.sheets['GSPBL_수업설계안']
+        worksheet.column_dimensions['A'].width = 25
+        worksheet.column_dimensions['B'].width = 80
         
-        y_pos = margin
-        draw.rectangle([(margin, y_pos), (width - margin, y_pos + 80)], fill=header_bg_color, outline=line_color)
-        draw_multiline_text_in_box(f"GSPBL 수업 설계도 ({page_num}/2)", title_font, (margin, y_pos, width - margin*2, 80), h_align='center', v_align='center')
-        y_pos += 80 + 10
+        # 내용이 긴 셀은 자동으로 줄바꿈되도록 설정
+        for row in worksheet.iter_rows(min_row=2, min_col=2, max_col=2):
+            for cell in row:
+                cell.alignment = cell.alignment.copy(wrap_text=True)
 
-        for header, content in rows.items():
-            content_str = str(content)
-            content_box_width = width - margin * 2 - 300
-            
-            # --- Start of ACCURATE height calculation logic ---
-            wrapped_lines = [l for line in content_str.split('\n') for l in textwrap.wrap(line, width=int(content_box_width / (body_font.size * 0.55)), break_long_words=True, replace_whitespace=False) or ['']]
-            line_height_for_calc = body_font.getbbox("A")[3] + 6
-            total_text_height = len(wrapped_lines) * line_height_for_calc
-            required_height = total_text_height + 30 # Add 30px for top/bottom padding
-            row_height = max(100, required_height)
-            # --- End of ACCURATE height calculation logic ---
-            
-            if y_pos + row_height > height - margin: row_height = height - margin - y_pos
-
-            draw.rectangle([(margin, y_pos), (margin + 300, y_pos + row_height)], fill=(245, 245, 245), outline=line_color)
-            draw_multiline_text_in_box(header, header_font, (margin, y_pos, 300, row_height), v_align='center', h_align='center')
-            draw.rectangle([(margin + 300, y_pos), (width - margin, y_pos + row_height)], fill='white', outline=line_color)
-            draw_multiline_text_in_box(content_str, body_font, (margin + 300, y_pos, content_box_width, row_height))
-            y_pos += row_height
-
-        buffer = io.BytesIO()
-        img.save(buffer, format="JPEG", quality=95)
-        images.append(buffer.getvalue())
-        
-    return images
+    processed_data = output.getvalue()
+    return processed_data
 
 
 # --- 4. 세션 상태 초기화 ---
@@ -267,10 +161,7 @@ def render_step1():
     st.session_state.public_product = st.text_area("학생들의 결과물을 누구에게, 어떻게 공개할지 구체적으로 작성하세요.", value=st.session_state.public_product, placeholder="예: 학부모님을 초청하여 '급식실 소음 줄이기' 캠페인 결과 발표회를 연다.", height=150, label_visibility="collapsed")
     if st.button("🤖 AI로 최종 산출물 제안받기", key="product_ai", use_container_width=True):
         if st.session_state.project_title:
-            prompt = (f"'{st.session_state.grade_group}' 학생들을 위한 GSPBL 프로젝트의 '최종 결과물 공개' 아이디어를 5가지 제안해줘. "
-                      f"이 프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야. "
-                      f"학생들이 프로젝트 결과를 교실 밖 실제 세상과 공유할 수 있는, **'{st.session_state.grade_group}' 수준에 맞는 창의적이고 다양한 방법**을 제안해줘. "
-                      f"번호 없이 한 줄씩만, 매번 다른 아이디어를 보여줘.")
+            prompt = (f"'{st.session_state.grade_group}' 학생들을 위한 GSPBL 프로젝트의 '최종 결과물 공개' 아이디어를 5가지 제안해줘. 이 프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야. 학생들이 프로젝트 결과를 교실 밖 실제 세상과 공유할 수 있는, **'{st.session_state.grade_group}' 수준에 맞는 창의적이고 다양한 방법**을 제안해줘. 번호 없이 한 줄씩만, 매번 다른 아이디어를 보여줘.")
             st.session_state.public_product = call_gemini(prompt)
             st.rerun()
         else: st.warning("탐구 질문을 먼저 입력해주세요.")
@@ -307,7 +198,6 @@ def render_step2():
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("💡 핵심역량")
-        # 역량 설명은 공간을 많이 차지하여 생략합니다. 실제 코드에서는 유지하셔도 좋습니다.
         core_competencies = ["자기관리 역량", "지식정보처리 역량", "창의적 사고 역량", "심미적 감성 역량", "협력적 소통 역량", "공동체 역량"]
         st.session_state.selected_core_competencies = [comp for comp in core_competencies if st.checkbox(comp, value=comp in st.session_state.selected_core_competencies, key=f"core_{comp}")]
     with col2:
@@ -327,32 +217,26 @@ def render_step3():
         
         if st.button("선택한 활동으로 AI 과정 구체화하기"):
             if selected_tags and st.session_state.project_title:
-                context_grade = st.session_state.grade_group
                 context_title = st.session_state.project_title
                 context_standards = "\n".join(f"- {s}" for s in st.session_state.selected_standards)
                 context_core_comp = ", ".join(st.session_state.selected_core_competencies)
                 context_sel_comp = ", ".join(st.session_state.selected_sel_competencies)
                 context_tags = ", ".join(selected_tags)
 
-                # >>>>> 수정된 프롬프트 시작 <<<<<
+                # >>>>> 수정된 프롬프트: 학년군 언급을 빼고, 성취기준에 집중하도록 변경 <<<<<
                 prompt = (
-                    f"당신은 초등학교 '{context_grade}' 전문 교육과정 설계 AI입니다. "
-                    f"당신의 유일한 목표는 제시된 **'{context_grade}'** 학생들의 인지적, 발달적 수준에 완벽하게 맞춰진 수업 계획을 만드는 것입니다.\n\n"
+                    "당신은 초등 교육과정 설계 전문가입니다. GSPBL 모델에 기반하여 '지속적 탐구' 과정을 구체적으로 설계해주세요.\n\n"
                     "--- 프로젝트 기본 정보 ---\n"
-                    f"**대상 학년:** {context_grade}\n"
                     f"**탐구 질문:** {context_title}\n"
                     f"**연계 성취기준:**\n{context_standards}\n"
                     f"**함양할 핵심역량:** {context_core_comp}\n"
                     f"**함양할 사회정서역량:** {context_sel_comp}\n"
                     f"**포함할 주요 활동:** {context_tags}\n\n"
                     "--- 요구 사항 ---\n"
-                    "1. 위의 **모든 기본 정보(특히 대상 학년)**를 반드시, 그리고 엄격하게 준수하여 학생들이 단계별로 무엇을 탐구하고 만들어갈지 **나이에 맞는 구체적인 과정안**을 작성해주세요.\n"
-                    "2. **결정적으로, '{context_grade}' 외에 다른 학년군(예: 3-4학년군, 1-2학년군 등)에 대한 내용은 절대로 언급하거나 제안해서는 안 됩니다.**\n"
-                    "3. 각 단계별로 예상되는 차시와 함께, 학생들이 사용할 만한 구체적인 디지털 도구를 추천해주세요.\n"
-                    f"4. 이 모든 규칙을 이해했는지 확인하기 위해, 최종 답변을 **'다음은 {context_grade} 학생들을 위한...'** 이라는 문장으로 반드시 시작해주세요.\n"
-                    f"**다시 한번 강조합니다: 답변 내용에는 '{context_grade}' 외에 다른 학년군이 절대로 언급되어서는 안 됩니다.**"
+                    "1. 위의 **모든 기본 정보(특히 연계 성취기준과 핵심역량)**를 반드시 고려하여, 학생들이 단계별로 무엇을 탐구하고 만들어갈지 구체적인 과정안을 작성해주세요.\n"
+                    "2. 각 단계별로 예상되는 차시와 함께, 학생들이 사용할 만한 구체적인 디지털 도구를 추천해주세요.\n"
+                    "3. 전체적인 흐름이 논리적으로 연결되도록 설계해주세요."
                 )
-                # >>>>> 수정된 프롬프트 끝 <<<<<
                 
                 detailed_process = call_gemini(prompt)
                 st.session_state.sustained_inquiry = detailed_process
@@ -371,9 +255,8 @@ def render_step3():
                       f"위 내용에 가장 적합한 평가 방법을 구체적인 예시와 함께 제안해줘. 번호 없이 한 줄씩만.")
             st.session_state.process_assessment = call_gemini(prompt)
         else: st.warning("탐구 질문과 지속적 탐구 계획을 먼저 입력해주세요.")
-    st.session_state.process_assessment = st.text_area("과정중심 평가 계획", value=st.session_state.process_assessment, placeholder="예: 자기평가 체크리스트, 동료 상호평가 등", height=150, label_visibility="collapsed")
+    st.session_state.process_assessment = st.text_area("과정중심 평가 계획", value=st.session_state.process_assessment, placeholder="예: 자기평가 체크리스트 등", height=150, label_visibility="collapsed")
     st.subheader("학생의 의사 & 선택권 (Student Voice and Choice)")
-    st.markdown("학생들이 '디자이너'로서 프로젝트에 참여하도록 어떤 선택권을 줄 수 있을까요?")
     voice_options = {"모둠 구성 방식": False, "자료 수집 방법": False, "산출물 형태 (영상, 포스터 등)": False, "역할 분담": False, "발표 방식": False}
     st.session_state.student_voice_choice = [option for option, _ in voice_options.items() if st.checkbox(option, value=option in st.session_state.student_voice_choice)]
     col1, col2 = st.columns(2)
@@ -394,6 +277,7 @@ def render_step3():
             else: st.warning("STEP 1의 탐구 질문을 먼저 입력해주세요.")
         st.session_state.reflection = st.text_area("성찰 계획", value=st.session_state.reflection, placeholder="AI 제안을 받거나 직접 입력하세요.", height=200, label_visibility="collapsed")
 
+# >>>>> 🌟 엑셀 다운로드 기능으로 교체된 함수 🌟 <<<<<
 def render_step4():
     st.header("✨ STEP 4. 최종 설계도 확인 및 내보내기")
     st.caption("입력된 모든 내용을 하나의 문서로 통합하여 확인하고, 저장 및 공유할 수 있습니다.")
@@ -430,14 +314,21 @@ def render_step4():
             prompt = (f"당신은 GSPBL(Gold Standard Project Based Learning) 전문가입니다.\n다음은 한 초등학교 선생님이 작성한 프로젝트 수업 설계안입니다.\nGSPBL의 7가지 필수 요소와 과정중심 평가, 핵심역량, 사회정서 역량 함양 계획이 잘 반영되었는지 분석해주세요.\n각 요소별로 강점과 함께, 더 발전시키면 좋을 보완점을 구체적인 예시를 들어 친절하게 컨설팅해주세요.\n\n--- 설계안 내용 ---\n{full_plan}")
             st.session_state.ai_feedback = call_gemini(prompt)
         if st.session_state.ai_feedback: st.markdown(st.session_state.ai_feedback)
-    with st.spinner("요약 이미지를 생성하고 있습니다... (내용이 길 경우 AI 요약이 포함됩니다)"):
-        image_data_list = create_lesson_plan_images()
-    if image_data_list:
-        st.subheader("🖼️ 수업 설계 요약표 저장")
-        st.caption("ℹ️ 내용이 긴 항목(지속적 탐구 등)과 성취기준 개수가 많은 경우, 이미지에 맞게 요약/축약되어 표시됩니다.")
-        col1, col2 = st.columns(2)
-        with col1: st.download_button("1페이지 JPG로 저장하기", image_data_list[0], f"GSPBL_설계요약표_1페이지.jpg", "image/jpeg", use_container_width=True)
-        with col2: st.download_button("2페이지 JPG로 저장하기", image_data_list[1], f"GSPBL_설계요약표_2페이지.jpg", "image/jpeg", use_container_width=True)
+    
+    st.subheader("📋 수업 설계안 저장")
+    st.markdown("---")
+    
+    excel_data = create_excel_download()
+    
+    st.download_button(
+        label="📥 수업 설계안 엑셀(Excel) 파일로 저장하기",
+        data=excel_data,
+        file_name=f"GSPBL_수업설계안.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        type="primary"
+    )
+
 
 # --- 6. 메인 앱 로직 ---
 def main():
