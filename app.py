@@ -49,7 +49,7 @@ def load_json_data(filename):
 @st.cache_data
 def parse_achievement_standards(grade_group):
     """
-    성취기준 JSON 파일에서 교과 및 성취기준을 파싱합니다.
+    성취수준 JSON 파일에서 교과 및 성취기준을 파싱합니다.
     """
     filename_map = {
         "1-2학년군": "1-2학년군_성취수준.json",
@@ -67,10 +67,10 @@ def parse_achievement_standards(grade_group):
     text = data["content"]
     subjects = {}
     
-    # 교과 목록을 찾는 더 안정적인 정규식으로 수정
-    subject_matches = re.finditer(r'\n(\d+)\.\s+([가-힣]+(?:\s*생활)?)\n', text)
-    subject_list = [(m.group(2).strip(), m.start()) for m in subject_matches]
-    
+    # 교과 목록을 찾는 정규식 수정 (교과명만 정확히 추출)
+    subject_matches = re.finditer(r'^\d+\.\s+([가-힣]+(?: 생활)?)$', text, re.MULTILINE)
+    subject_list = [(m.group(1).strip(), m.start()) for m in subject_matches]
+
     for i, (subject_name, start_index) in enumerate(subject_list):
         end_index = subject_list[i+1][1] if i + 1 < len(subject_list) else len(text)
         subject_text = text[start_index:end_index]
@@ -106,7 +106,7 @@ def create_lesson_plan_images():
     data = st.session_state
     
     rows_page1 = {
-        "🎯 프로젝트 대주제 (도전적 질문)": data.get('project_title', ''),
+        "🎯 탐구 질문": data.get('project_title', ''),
         "📢 최종 결과물 공개": data.get('public_product', ''),
         "📚 교과 성취기준": "\n".join(data.get('selected_standards', [])),
         "💡 핵심역량": "\n".join(f"• {c}" for c in data.get('selected_core_competencies', [])),
@@ -181,7 +181,7 @@ def create_lesson_plan_images():
                 lines.extend(wrapped_lines if wrapped_lines else [''])
             row_height = max(100, len(lines) * 30 + 40)
             
-            if y_pos + row_height > height - margin: # 페이지 넘어가지 않게 방지
+            if y_pos + row_height > height - margin:
                 row_height = height - margin - y_pos
 
             draw.rectangle([(margin, y_pos), (margin + 300, y_pos + row_height)], fill=(245, 245, 245), outline=line_color)
@@ -212,7 +212,7 @@ def initialize_session_state():
         "sustained_inquiry": "", "student_voice_choice": [],
         "critique_revision": "", "reflection": "", "process_assessment": "",
         "ai_feedback": "",
-        "start_method": None,
+        "question_analysis": ""
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -223,47 +223,18 @@ def initialize_session_state():
 def render_start_page():
     st.title("GSPBL 수업 설계 내비게이터 🚀")
     st.markdown("---")
-    st.subheader("수업 설계를 시작하는 방법을 선택해주세요.")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("💡 교육과정 핵심 아이디어로 시작하기", use_container_width=True):
-            st.session_state.start_method = "core_idea"
-            st.rerun()
-    with col2:
-        if st.button("✍️ 새로 시작하기", use_container_width=True):
-            st.session_state.page = 1
-            st.rerun()
-
-    if st.session_state.start_method == "core_idea":
-        st.markdown("---")
-        st.subheader("핵심 아이디어 선택")
-        core_idea_data = load_json_data("핵심아이디어.json")
-        if core_idea_data:
-            subjects = sorted(list(set(item["교과"] for item in core_idea_data)))
-            selected_subject = st.selectbox("교과를 선택하세요.", subjects)
-            
-            domains = sorted(list(set(item["영역"] for item in core_idea_data if item["교과"] == selected_subject)))
-            selected_domain = st.selectbox("영역을 선택하세요.", domains)
-
-            core_idea = next((item["핵심 아이디어"] for item in core_idea_data if item["교과"] == selected_subject and item["영역"] == selected_domain), "")
-            
-            with st.container(border=True):
-                st.write("**선택된 핵심 아이디어**")
-                st.info(core_idea)
-
-            if st.button("이 아이디어로 설계 시작하기", type="primary", use_container_width=True):
-                prompt = f"다음 교육과정 핵심 아이디어를 초등학생들이 탐구할 수 있는 GSPBL '도전적인 질문' 1개로 변환해줘. 학생들의 흥미를 유발할 수 있도록 쉽고 재미있는 표현을 사용해줘.\n\n[핵심 아이디어]\n{core_idea}"
-                ai_question = call_gemini(prompt)
-                st.session_state.project_title = ai_question.strip().replace('"', '').replace('*', '')
-                st.session_state.page = 1
-                st.rerun()
+    st.subheader("선생님의 아이디어가 학생들의 삶을 바꾸는 진짜 배움으로 연결되도록,")
+    st.subheader("GSPBL 내비게이터가 단계별 설계를 안내합니다.")
+    st.write("")
+    if st.button("➕ 새 프로젝트 설계 시작하기", type="primary", use_container_width=True):
+        st.session_state.page = 1
+        st.rerun()
 
 def render_step1():
     st.header("🗺️ STEP 1. 최종 목적지 설정하기")
-    st.caption("프로젝트의 대주제와 최종 결과물을 설정하여 전체적인 방향을 정의합니다.")
+    st.caption("프로젝트의 핵심이 되는 탐구 질문과 최종 결과물을 설정합니다.")
     
-    st.subheader("프로젝트 대주제 (Challenging Problem or Question)")
+    st.subheader("탐구 질문 (Challenging Problem or Question)")
     st.session_state.project_title = st.text_area(
         "프로젝트를 관통하는 핵심 질문을 입력하세요.",
         value=st.session_state.project_title,
@@ -271,18 +242,27 @@ def render_step1():
         height=150,
         label_visibility="collapsed"
     )
-    st.info("💡 **팁:** 학생의 삶과 연결되고, 정답이 하나가 아닌 질문을 만들어 보세요.")
-
-    with st.expander("🤖 AI로 '도전적인 질문' 아이디어 얻기"):
-        ai_keyword = st.text_input("프로젝트 관련 핵심 키워드를 입력해보세요.", placeholder="예: 기후 위기, 우리 동네 문제, 재활용")
-        if st.button("AI 제안 받기"):
-            if ai_keyword:
-                prompt = f"초등학생 대상 GSPBL 프로젝트를 위한 '도전적인 질문'을 생성해줘. 핵심 키워드는 '{ai_keyword}'야. 학생들이 흥미를 느끼고 깊이 탐구하고 싶게 만드는, 정답이 없는 질문 5개를 제안해줘. 번호 없이 한 줄씩만."
+    
+    with st.expander("🤖 AI 도우미"):
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("질문 아이디어 제안받기", use_container_width=True):
+                prompt = "초등학생 대상 GSPBL 프로젝트에 활용할 수 있는 흥미로운 '탐구 질문'의 예시를 5개만 제안해줘. 학생들이 자신의 삶과 연결하여 깊이 탐구할 수 있는, 정답이 없는 질문이어야 해. 번호 없이 한 줄씩만."
                 suggestions = call_gemini(prompt)
                 st.session_state.project_title = suggestions
                 st.rerun()
-            else:
-                st.warning("키워드를 먼저 입력해주세요.")
+        with col2:
+            if st.button("입력한 질문 유형 분석하기", use_container_width=True):
+                if st.session_state.project_title:
+                    prompt = f"다음은 초등학생 대상 프로젝트 수업의 탐구 질문이야. 이 질문이 어떤 유형(예: 문제 해결형, 원인 탐구형, 창작 표현형, 찬반 논쟁형 등)에 해당하는지 분석하고, 왜 그렇게 생각하는지 간략하게 설명해줘.\n\n질문: \"{st.session_state.project_title}\""
+                    analysis = call_gemini(prompt)
+                    st.session_state.question_analysis = analysis
+                else:
+                    st.warning("먼저 탐구 질문을 입력해주세요.")
+    
+    if st.session_state.question_analysis:
+        st.info(st.session_state.question_analysis)
+
 
     st.subheader("최종 결과물 공개 (Public Product)")
     st.session_state.public_product = st.text_area(
@@ -292,17 +272,15 @@ def render_step1():
         height=150,
         label_visibility="collapsed"
     )
-    st.info("💡 **팁:** 결과물이 교실 밖으로 공개될 때, 학생들은 진짜 세상의 문제를 해결하고 있다는 책임감과 자부심을 느낍니다.")
+    if st.button("🤖 AI로 최종 산출물 제안받기", key="product_ai", use_container_width=True):
+        if st.session_state.project_title:
+            prompt = f"초등학생 대상 GSPBL 프로젝트를 위한 '최종 결과물 공개(Public Product)' 아이디어를 5가지 제안해줘. 이 프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야. 학생들이 프로젝트 결과를 교실 밖 실제 세상과 공유할 수 있는 구체적이고 의미 있는 방법을 제안해줘. 번호 없이 한 줄씩만."
+            suggestions = call_gemini(prompt)
+            st.session_state.public_product = suggestions
+            st.rerun()
+        else:
+            st.warning("탐구 질문을 먼저 입력해주세요.")
 
-    with st.expander("🤖 AI로 '최종 산출물' 아이디어 얻기"):
-        if st.button("AI 제안 받기", key="product_ai"):
-            if st.session_state.project_title:
-                prompt = f"초등학생 대상 GSPBL 프로젝트를 위한 '최종 결과물 공개(Public Product)' 아이디어를 5가지 제안해줘. 이 프로젝트의 도전적 질문은 '{st.session_state.project_title}'이야. 학생들이 프로젝트 결과를 교실 밖 실제 세상과 공유할 수 있는 구체적이고 의미 있는 방법을 제안해줘. 번호 없이 한 줄씩만."
-                suggestions = call_gemini(prompt)
-                st.session_state.public_product = suggestions
-                st.rerun()
-            else:
-                st.warning("프로젝트 대주제를 먼저 입력해주세요.")
 
 def render_step2():
     st.header("🧭 STEP 2. 학습 나침반 준비하기")
@@ -388,13 +366,13 @@ def render_step3():
         if st.button("선택한 활동으로 AI 과정 구체화하기"):
             if selected_tags and st.session_state.project_title:
                 prompt = (f"초등학생 대상 GSPBL 프로젝트의 '지속적 탐구' 과정을 구체적으로 설계해줘.\n"
-                          f"프로젝트의 도전적 질문은 '{st.session_state.project_title}'이야.\n"
+                          f"프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야.\n"
                           f"다음과 같은 활동들을 포함해서, 각 단계별로 학생들이 무엇을 할지, 어떤 디지털 도구를 사용하면 좋을지 예시를 들어 상세한 과정안을 작성해줘.\n\n"
                           f"포함할 활동: {', '.join(selected_tags)}")
                 detailed_process = call_gemini(prompt)
                 st.session_state.sustained_inquiry = detailed_process
             else:
-                st.warning("프로젝트 대주제와 주요 활동을 먼저 입력/선택해주세요.")
+                st.warning("탐구 질문과 주요 활동을 먼저 입력/선택해주세요.")
 
     st.session_state.sustained_inquiry = st.text_area(
         "탐구 과정을 구체적으로 작성하거나 AI 제안을 수정하세요.",
@@ -414,7 +392,7 @@ def render_step3():
             suggestions = call_gemini(prompt)
             st.session_state.process_assessment = suggestions
         else:
-            st.warning("프로젝트 대주제와 지속적 탐구 계획을 먼저 입력해주세요.")
+            st.warning("탐구 질문과 지속적 탐구 계획을 먼저 입력해주세요.")
 
     st.session_state.process_assessment = st.text_area(
         "과정중심 평가 계획",
@@ -445,7 +423,7 @@ def render_step3():
                 suggestions = call_gemini(prompt)
                 st.session_state.critique_revision = suggestions
              else:
-                st.warning("STEP 1의 프로젝트 대주제를 먼저 입력해주세요.")
+                st.warning("STEP 1의 탐구 질문을 먼저 입력해주세요.")
         
         st.session_state.critique_revision = st.text_area(
             "피드백 계획",
@@ -462,7 +440,7 @@ def render_step3():
                 suggestions = call_gemini(prompt)
                 st.session_state.reflection = suggestions
             else:
-                st.warning("STEP 1의 프로젝트 대주제를 먼저 입력해주세요.")
+                st.warning("STEP 1의 탐구 질문을 먼저 입력해주세요.")
 
         st.session_state.reflection = st.text_area(
             "성찰 계획",
@@ -477,7 +455,7 @@ def render_step4():
     st.markdown("---")
 
     final_data = {
-        "🎯 프로젝트 대주제": "project_title",
+        "🎯 탐구 질문": "project_title",
         "📢 최종 결과물 공개": "public_product",
         "📚 교과 성취기준": "selected_standards",
         "💡 핵심역량": "selected_core_competencies",
