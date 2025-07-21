@@ -35,7 +35,7 @@ else:
 @st.cache_data
 def load_json_data(filename):
     """'data' 폴더에서 JSON 파일을 로드합니다."""
-    filepath = os.path.join('data', filename)
+    filepath = os.path..join('data', filename)
     if not os.path.exists(filepath):
         st.error(f"'{filepath}' 파일을 찾을 수 없습니다. 'data' 폴더 안에 있는지 확인해주세요.")
         return None
@@ -47,52 +47,18 @@ def load_json_data(filename):
         return None
 
 @st.cache_data
-def get_standards_for_subject(grade_group, subject_name):
-    """
-    선택된 학년군과 교과에 해당하는 성취기준 목록만 파싱합니다.
-    """
+def load_standards_text(grade_group):
+    """선택된 학년군의 성취기준 전체 텍스트를 불러옵니다."""
     filename_map = {
         "1-2학년군": "1-2학년군_성취수준.json",
         "3-4학년군": "3-4학년군_성취수준.json",
         "5-6학년군": "5-6학년군_성취수준.json",
     }
     filename = filename_map.get(grade_group)
-    if not filename: return []
+    if not filename: return ""
 
     data = load_json_data(filename)
-    if not data or "content" not in data: return []
-
-    text = data["content"]
-    
-    # 교과 목록 (목차 기준)
-    all_subjects_in_file = re.findall(r'^\d+\.\s+([가-힣]+(?: 생활)?)\t\d+', text, re.MULTILINE)
-    
-    # 본문에서 해당 교과 영역 찾기
-    start_match = re.search(f'^\\d+\\.\\s{re.escape(subject_name)}$', text, re.MULTILINE)
-    if not start_match: return []
-
-    start_index = start_match.end()
-    
-    # 다음 교과 시작 전까지를 해당 교과 내용으로 간주
-    end_index = len(text)
-    current_subject_index_in_list = -1
-    for i, sub in enumerate(all_subjects_in_file):
-        if sub == subject_name:
-            current_subject_index_in_list = i
-            break
-            
-    if current_subject_index_in_list != -1 and current_subject_index_in_list + 1 < len(all_subjects_in_file):
-        next_subject_name = all_subjects_in_file[current_subject_index_in_list + 1]
-        next_start_match = re.search(f'^\\d+\\.\\s{re.escape(next_subject_name)}$', text, re.MULTILINE)
-        if next_start_match:
-            end_index = next_start_match.start()
-
-    subject_text = text[start_index:end_index]
-    
-    standards = re.findall(r'(\[\d{1,2}[가-힣]{1,2}\d{2}-\d{2}\])([^\[]+)', subject_text)
-    
-    return [f"{code} {desc.strip()}" for code, desc in standards]
-
+    return data.get("content", "") if data else ""
 
 # --- 3. AI 및 이미지 생성 함수 ---
 
@@ -117,7 +83,7 @@ def create_lesson_plan_images():
     data = st.session_state
     
     rows_page1 = {
-        "🎯 탐구 질문": data.get('project_title', ''),
+        "� 탐구 질문": data.get('project_title', ''),
         "📢 최종 결과물 공개": data.get('public_product', ''),
         "📚 교과 성취기준": "\n".join(data.get('selected_standards', [])),
         "💡 핵심역량": "\n".join(f"• {c}" for c in data.get('selected_core_competencies', [])),
@@ -217,8 +183,9 @@ def initialize_session_state():
 
     defaults = {
         "project_title": "", "public_product": "",
-        "grade_group": "3-4학년군", "selected_subject": None,
+        "grade_group": "3-4학년군",
         "selected_standards": [], 
+        "ai_recommendations": [],
         "selected_core_competencies": [], "selected_sel_competencies": [],
         "sustained_inquiry": "", "student_voice_choice": [],
         "critique_revision": "", "reflection": "", "process_assessment": "",
@@ -255,7 +222,7 @@ def render_step1():
                 prompt = f"초등학생 대상 GSPBL 프로젝트를 위한 '탐구 질문'을 생성해줘. 핵심 키워드는 '{ai_keyword}'야. 학생들이 흥미를 느끼고 깊이 탐구하고 싶게 만드는, 정답이 없는 질문 5개를 제안해줘. 번호 없이 한 줄씩만."
                 suggestions = call_gemini(prompt)
                 st.session_state.project_title = suggestions
-                st.session_state.question_analysis = "" # 새로운 제안 시 분석 내용 초기화
+                st.session_state.question_analysis = "" 
                 st.rerun()
             else:
                 st.warning("먼저 키워드를 입력해주세요.")
@@ -303,45 +270,49 @@ def render_step2():
 
     st.subheader("교과 성취기준 연결")
     
-    # 학년군별 교과목 목록을 하드코딩하여 안정성 확보
-    subject_map = {
-        "1-2학년군": ["국어", "수학", "바른 생활", "슬기로운 생활", "즐거운 생활"],
-        "3-4학년군": ["국어", "사회", "도덕", "수학", "과학", "체육", "음악", "미술", "영어"],
-        "5-6학년군": ["국어", "사회", "도덕", "수학", "과학", "실과", "체육", "음악", "미술", "영어"]
-    }
-    
-    def on_grade_group_change():
-        # 학년군이 바뀌면 선택된 교과와 성취기준 초기화
-        st.session_state.selected_subject = None
-        st.session_state.selected_standards = []
-
     grade_group = st.radio(
         "학년군 선택",
-        options=subject_map.keys(),
-        index=list(subject_map.keys()).index(st.session_state.grade_group),
+        ["1-2학년군", "3-4학년군", "5-6학년군"],
+        index=["1-2학년군", "3-4학년군", "5-6학년군"].index(st.session_state.grade_group),
         horizontal=True,
-        key="grade_group",
-        on_change=on_grade_group_change
+        key="grade_group"
     )
 
-    subjects_for_grade = subject_map.get(grade_group, [])
-    selected_subject = st.selectbox(
-        "교과 선택", 
-        options=subjects_for_grade, 
-        key="selected_subject"
-    )
-
-    if selected_subject:
-        standards = get_standards_for_subject(grade_group, selected_subject)
-        if standards:
-            st.session_state.selected_standards = st.multiselect(
-                "프로젝트와 관련된 성취기준을 모두 선택하세요.",
-                options=standards,
-                default=st.session_state.selected_standards,
-                key="multiselect_standards"
-            )
+    if st.button("🤖 AI로 성취기준 추천받기", use_container_width=True):
+        if st.session_state.project_title:
+            standards_text = load_standards_text(grade_group)
+            if standards_text:
+                prompt = (f"당신은 초등 교육과정 전문가입니다. "
+                          f"다음은 '{grade_group}' 학생들을 위한 프로젝트 수업의 탐구 질문입니다.\n"
+                          f"탐구 질문: \"{st.session_state.project_title}\"\n\n"
+                          f"아래에 제공되는 '{grade_group}' 전체 성취기준 내용 중에서, "
+                          f"위 탐구 질문과 가장 관련성이 높은 성취기준 5개를 추천해주세요.\n"
+                          f"추천 시, 반드시 성취기준 코드와 내용을 포함한 전체 텍스트 그대로 한 줄씩 나열해주세요.\n\n"
+                          f"--- {grade_group} 성취기준 내용 ---\n{standards_text[:4000]}") # 토큰 제한 고려
+                
+                recommendations_text = call_gemini(prompt)
+                
+                # AI 응답에서 성취기준 코드 형식을 찾아 목록으로 변환
+                st.session_state.ai_recommendations = re.findall(r'(\[\d{1,2}[가-힣]{1,2}\d{2}-\d{2}\].+)', recommendations_text)
+                st.session_state.selected_standards = [] # 추천 시 기존 선택 초기화
+            else:
+                st.warning(f"'{grade_group}'의 성취기준 파일을 불러올 수 없습니다.")
         else:
-            st.warning(f"'{selected_subject}' 교과의 성취기준을 불러오는 데 실패했습니다.")
+            st.warning("STEP 1에서 탐구 질문을 먼저 입력해주세요.")
+
+    if st.session_state.ai_recommendations:
+        st.write("AI가 추천한 성취기준 목록입니다. 이 중에서 프로젝트에 연계할 성취기준을 모두 선택하세요.")
+        st.session_state.selected_standards = st.multiselect(
+            "AI 추천 성취기준",
+            options=st.session_state.ai_recommendations,
+            default=st.session_state.selected_standards,
+            label_visibility="collapsed"
+        )
+    
+    if st.session_state.selected_standards:
+        st.write("최종 선택된 성취기준:")
+        for std in st.session_state.selected_standards:
+            st.success(f"{std}")
 
 
     st.markdown("---")
@@ -495,7 +466,7 @@ def render_step4():
         "🧭 지속적 탐구": "sustained_inquiry",
         "📈 과정중심 평가": "process_assessment",
         "🗣️ 학생의 의사 & 선택권": "student_voice_choice",
-        "� 비평과 개선": "critique_revision",
+        "🔄 비평과 개선": "critique_revision",
         "🤔 성찰": "reflection"
     }
 
@@ -513,7 +484,7 @@ def render_step4():
                 if st.button(f"✏️ 수정", key=f"edit_{key}", use_container_width=True):
                     if key in ["project_title", "public_product"]:
                         st.session_state.page = 1
-                    elif key in ["selected_standards", "selected_core_competencies", "selected_sel_competencies"]:
+                    elif key in ["selected_standards", "ai_recommendations", "selected_core_competencies", "selected_sel_competencies"]:
                         st.session_state.page = 2
                     else:
                         st.session_state.page = 3
