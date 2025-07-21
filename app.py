@@ -70,8 +70,13 @@ def call_gemini(prompt, show_spinner=True):
     except Exception as e:
         return f"AI 응답 생성에 실패했습니다. API 키가 유효한지 확인해주세요. 오류: {e}"
 
+# >>>>> 🌟 AI 요약 함수 및 관련 로직 제거 🌟 <<<<<
+# summarize_text_for_image 함수는 더 이상 필요 없으므로 삭제합니다.
+
 def create_excel_download():
+    """세션 데이터 원본을 바탕으로 엑셀 파일을 생성합니다."""
     data = st.session_state
+
     plan_data = {
         "🎯 탐구 질문": data.get('project_title', ''),
         "📢 최종 결과물 공개": data.get('public_product', ''),
@@ -112,7 +117,7 @@ def initialize_session_state():
     for key, value in defaults.items():
         if key not in st.session_state: st.session_state[key] = value
 
-# --- 5. 페이지 렌더링 함수 ---
+# --- 5. 페이지 렌더링 함수 (이하 변경 없음) ---
 
 def render_start_page():
     st.title("GSPBL 수업 설계 내비게이터 🚀")
@@ -192,7 +197,6 @@ def render_step2():
         sel_competencies = ["자기 인식 역량", "자기 관리 역량", "사회적 인식 역량", "관계 기술 역량", "책임 있는 의사결정 역량"]
         st.session_state.selected_sel_competencies = [comp for comp in sel_competencies if st.checkbox(comp, value=comp in st.session_state.selected_sel_competencies, key=f"sel_{comp}")]
 
-# >>>>> 🌟 최종 결과물 연계를 위해 최종 수정된 함수 🌟 <<<<<
 def render_step3():
     st.header("🚗 STEP 3. 탐구 여정 디자인하기")
     st.caption("학생들이 경험할 구체적인 탐구, 피드백, 성찰 활동을 계획합니다.")
@@ -205,7 +209,7 @@ def render_step3():
         if st.button("선택한 활동으로 AI 과정 구체화하기"):
             if selected_tags and st.session_state.project_title:
                 context_title = st.session_state.project_title
-                context_product = st.session_state.public_product  # 최종 결과물 정보 추가
+                context_product = st.session_state.public_product
                 context_standards = "\n".join(f"- {s}" for s in st.session_state.selected_standards)
                 context_core_comp = ", ".join(st.session_state.selected_core_competencies)
                 context_sel_comp = ", ".join(st.session_state.selected_sel_competencies)
@@ -215,7 +219,7 @@ def render_step3():
                     "당신은 초등 교육과정 설계 전문가입니다. GSPBL 모델에 기반하여 '지속적 탐구' 과정을 구체적으로 설계해주세요.\n\n"
                     "--- 프로젝트 기본 정보 ---\n"
                     f"**탐구 질문:** {context_title}\n"
-                    f"**최종 결과물:** {context_product}\n"  # 프롬프트에 최종 결과물 추가
+                    f"**최종 결과물:** {context_product}\n"
                     f"**연계 성취기준:**\n{context_standards}\n"
                     f"**함양할 핵심역량:** {context_core_comp}\n"
                     f"**함양할 사회정서역량:** {context_sel_comp}\n"
@@ -235,7 +239,6 @@ def render_step3():
 
     st.session_state.sustained_inquiry = st.text_area("탐구 과정을 구체적으로 작성하거나 AI 제안을 수정하세요.", value=st.session_state.sustained_inquiry, height=300, label_visibility="collapsed")
 
-    # 이하 Step 3의 나머지 부분 (변경 없음)
     st.subheader("과정중심 평가 (Process-based Assessment)")
     if st.button("🤖 AI로 평가 방법 제안받기", key="assessment_ai"):
         if st.session_state.project_title and st.session_state.sustained_inquiry:
