@@ -63,32 +63,26 @@ def call_gemini(prompt, show_spinner=True):
     except Exception as e:
         return f"AI 응답 생성에 실패했습니다. API 키가 유효한지 확인해주세요. 오류: {e}"
 
-# 🌟🌟🌟 AI 요약 함수 추가 🌟🌟🌟
 def summarize_text_for_image(text, max_chars=400):
     """이미지 생성을 위해 긴 텍스트를 AI로 요약하거나 단순 축약합니다."""
     if not isinstance(text, str) or len(text) <= max_chars:
         return text
 
-    # API 키가 없으면 단순 축약
     if not GEMINI_API_KEY:
         return text[:max_chars] + "..."
 
     try:
-        # 이미지 생성 중에는 별도의 스피너 없이 내부적으로 호출
         prompt = f"다음 텍스트를 최종 보고서의 요약표에 넣을 수 있도록 200자 내외의 핵심 내용으로 매우 간결하게 요약해줘:\n\n---\n{text}\n---"
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception:
-        # API 실패 시 안전하게 단순 축약으로 대체
         return text[:max_chars] + "..."
 
-# 🌟🌟🌟 이미지 생성 함수 수정 🌟🌟🌟
 def create_lesson_plan_images():
     """세션 데이터를 '요약'하여 2페이지 분량의 이미지를 생성합니다."""
     original_data = st.session_state
     
-    # 1. 이미지에 표시할 데이터만 따로 요약/가공
     display_data = {}
     fields_to_summarize = [
         'sustained_inquiry', 'process_assessment', 
@@ -98,16 +92,13 @@ def create_lesson_plan_images():
         if key in fields_to_summarize:
             display_data[key] = summarize_text_for_image(value)
         elif key == 'selected_standards' and isinstance(value, list):
-            # 성취기준은 4개까지만 보여주고 나머지는 개수로 표시
             if len(value) > 4:
                 display_data[key] = value[:4] + [f"...외 {len(value) - 4}개 항목"]
             else:
                 display_data[key] = value
         else:
-            # 그 외의 데이터는 그대로 복사
             display_data[key] = value
 
-    # 2. 요약된 데이터를 기반으로 페이지별 내용 구성
     rows_page1 = {
         "🎯 탐구 질문": display_data.get('project_title', ''),
         "📢 최종 결과물 공개": display_data.get('public_product', ''),
@@ -124,7 +115,6 @@ def create_lesson_plan_images():
         "🤔 성찰": display_data.get('reflection', '')
     }
 
-    # 3. 이미지 생성 (기존 로직과 거의 동일)
     images = []
     for page_num, rows in enumerate([rows_page1, rows_page2], 1):
         width, height = 1200, 1700
@@ -235,6 +225,7 @@ def render_start_page():
         st.session_state.page = 1
         st.rerun()
 
+# >>>>> 🌟 STEP 1 수정 🌟 <<<<<
 def render_step1():
     st.header("🗺️ STEP 1. 최종 목적지 설정하기")
     st.caption("프로젝트의 핵심이 되는 탐구 질문과 최종 결과물을 설정합니다.")
@@ -283,7 +274,11 @@ def render_step1():
     )
     if st.button("🤖 AI로 최종 산출물 제안받기", key="product_ai", use_container_width=True):
         if st.session_state.project_title:
-            prompt = f"초등학생 대상 GSPBL 프로젝트를 위한 '최종 결과물 공개(Public Product)' 아이디어를 5가지 제안해줘. 이 프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야. 학생들이 프로젝트 결과를 교실 밖 실제 세상과 공유할 수 있는 구체적이고 의미 있는 방법을 제안해줘. 번호 없이 한 줄씩만."
+            # >>>>> 수정된 프롬프트: 학년군 정보를 추가하여 더 동적인 답변 유도 <<<<<
+            prompt = (f"'{st.session_state.grade_group}' 학생들을 위한 GSPBL 프로젝트의 '최종 결과물 공개' 아이디어를 5가지 제안해줘. "
+                      f"이 프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야. "
+                      f"학생들이 프로젝트 결과를 교실 밖 실제 세상과 공유할 수 있는, **'{st.session_state.grade_group}' 수준에 맞는 창의적이고 다양한 방법**을 제안해줘. "
+                      f"번호 없이 한 줄씩만, 매번 다른 아이디어를 보여줘.")
             suggestions = call_gemini(prompt)
             st.session_state.public_product = suggestions
             st.rerun()
@@ -405,6 +400,7 @@ def render_step2():
                 selected_sel.append(comp)
         st.session_state.selected_sel_competencies = selected_sel
 
+# >>>>> 🌟 STEP 3 수정 🌟 <<<<<
 def render_step3():
     st.header("🚗 STEP 3. 탐구 여정 디자인하기")
     st.caption("학생들이 경험할 구체적인 탐구, 피드백, 성찰 활동을 계획합니다.")
@@ -420,20 +416,40 @@ def render_step3():
         selected_tags = st.multiselect("주요 활동을 선택하여 탐구의 뼈대를 만들어보세요.", options=inquiry_tags)
         
         if st.button("선택한 활동으로 AI 과정 구체화하기"):
+            # 탐구 질문과 활동 태그가 모두 선택되었는지 확인
             if selected_tags and st.session_state.project_title:
-                prompt = (f"초등학생 대상 GSPBL 프로젝트의 '지속적 탐구' 과정을 구체적으로 설계해줘.\n"
-                          f"프로젝트의 탐구 질문은 '{st.session_state.project_title}'이야.\n"
-                          f"다음과 같은 활동들을 포함해서, 몇차시를 할지, 각 단계별로 학생들이 무엇을 할지, 어떤 디지털 도구를 사용하면 좋을지 예시를 들어 간단하게 작성해줘.\n\n"
-                          f"포함할 활동: {', '.join(selected_tags)}")
+                # >>>>> 수정된 프롬프트: STEP 2의 모든 정보를 맥락으로 제공 <<<<<
+                # 가독성을 위해 f-string과 여러 변수를 사용
+                context_grade = st.session_state.grade_group
+                context_title = st.session_state.project_title
+                context_standards = "\n".join(f"- {s}" for s in st.session_state.selected_standards)
+                context_core_comp = ", ".join(st.session_state.selected_core_competencies)
+                context_sel_comp = ", ".join(st.session_state.selected_sel_competencies)
+                context_tags = ", ".join(selected_tags)
+
+                prompt = (
+                    "당신은 초등 교육과정 설계 전문가입니다. GSPBL 모델에 기반하여 '지속적 탐구' 과정을 구체적으로 설계해주세요.\n\n"
+                    "--- 프로젝트 기본 정보 ---\n"
+                    f"**대상 학년:** {context_grade}\n"
+                    f"**탐구 질문:** {context_title}\n"
+                    f"**연계 성취기준:**\n{context_standards}\n"
+                    f"**함양할 핵심역량:** {context_core_comp}\n"
+                    f"**함양할 사회정서역량:** {context_sel_comp}\n"
+                    f"**포함할 주요 활동:** {context_tags}\n\n"
+                    "--- 요구 사항 ---\n"
+                    "1. 위의 **모든 기본 정보(특히 대상 학년과 성취기준)**를 반드시 고려하여, 학생들이 단계별로 무엇을 탐구하고 만들어갈지 **나이에 맞는 과정안**을 작성해주세요.\n"
+                    "2. 각 단계별로 예상되는 차시와 함께, 학생들이 사용할 만한 구체적인 디지털 도구를 추천해주세요.\n"
+                    "3. 전체적인 흐름이 논리적으로 연결되도록 설계해주세요."
+                )
                 detailed_process = call_gemini(prompt)
                 st.session_state.sustained_inquiry = detailed_process
             else:
-                st.warning("탐구 질문과 주요 활동을 먼저 입력/선택해주세요.")
+                st.warning("STEP 1의 탐구 질문과 주요 활동을 먼저 입력/선택해주세요.")
 
     st.session_state.sustained_inquiry = st.text_area(
         "탐구 과정을 구체적으로 작성하거나 AI 제안을 수정하세요.",
         value=st.session_state.sustained_inquiry,
-        height=250,
+        height=300,
         label_visibility="collapsed"
     )
 
@@ -564,7 +580,6 @@ def render_step4():
         if st.session_state.ai_feedback:
             st.markdown(st.session_state.ai_feedback)
 
-    # 🌟🌟🌟 이미지 생성 시 스피너 및 안내 문구 추가 🌟🌟🌟
     with st.spinner("요약 이미지를 생성하고 있습니다... (내용이 길 경우 AI 요약이 포함됩니다)"):
         image_data_list = create_lesson_plan_images()
 
