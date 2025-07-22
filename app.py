@@ -134,7 +134,6 @@ def render_start_page():
     st.title("GSPBL 수업 설계 내비게이터 🚀")
     st.markdown("---")
 
-    # 활용 안내 섹션
     with st.expander("💡 활용 안내: 시작하기 전에 꼭 읽어보세요!", expanded=True):
         st.markdown("""
         **이 내비게이터는 선생님의 훌륭한 수업 아이디어를 체계적인 GSPBL 설계 초안으로 만들어주는 '아이디어 발상 파트너'입니다.**
@@ -155,6 +154,7 @@ def render_start_page():
         #### **⭐ 중요 활용 Tip!**
         *   **AI 제안은 '뷔페'처럼 활용하세요:** AI는 종종 5가지 정도의 아이디어를 제시합니다. 이 중 가장 마음에 드는 아이디어를 **선택하거나, 여러 개를 조합하여 수정하고, 필요 없는 부분은 과감히 삭제**하여 선생님만의 계획을 만들어보세요.
         *   **성취기준/역량은 중복 선택이 가능해요:** `STEP 2`에서 여러 교과를 넘나들며 프로젝트에 필요한 성취기준을 **모두 선택(누적)**할 수 있습니다. 핵심역량과 사회정서 역량도 필요한 만큼 체크하세요.
+        *   **각 단계는 서로 연결되어 있어요:** STEP 1에서 입력한 '탐구 질문'은 STEP 3의 '지속적 탐구' 아이디어 생성에 직접 활용됩니다. **각 단계의 내용을 충실히 채울수록 다음 단계에서 더 정확하고 유용한 AI 제안을 받을 수 있습니다.**
         """)
     
     st.markdown("---")
@@ -169,7 +169,7 @@ def render_start_page():
 def render_step1():
     """STEP 1 페이지를 렌더링합니다."""
     st.header("🗺️ STEP 1. 최종 목적지 설정하기")
-    st.caption("프로젝트의 핵심이 되는 탐구 질문과 최종 결과물을 설정합니다.")
+    st.info("💡 **Tip:** 프로젝트의 '얼굴'과 '목표'를 정하는 가장 중요한 단계입니다. 학생들의 흥미를 유발하고, 실제 세상과 연결된 도전적인 질문과 결과물을 설정해보세요.")
     
     st.subheader("탐구 질문 (Challenging Problem or Question)")
     with st.expander("🤖 AI 도우미: 탐구 질문 만들기", expanded=True):
@@ -209,7 +209,7 @@ def render_step1():
 def render_step2():
     """STEP 2 페이지를 렌더링합니다."""
     st.header("🧭 STEP 2. 학습 나침반 준비하기")
-    st.caption("프로젝트를 통해 달성할 교과 성취기준과 핵심 역량을 명확히 설정합니다.")
+    st.info("💡 **Tip:** 프로젝트의 '학습 목표'를 명확히 하는 단계입니다. 여러 교과의 성취기준을 융합하여 프로젝트의 깊이를 더하고, 기르고자 하는 역량을 선택하세요.")
     
     st.subheader("교과 성취기준 연결")
     VALID_SUBJECTS = {
@@ -245,25 +245,53 @@ def render_step2():
             st.success(f"{std}")
             
     st.markdown("---")
+    
+    # 역량 설명을 위한 딕셔너리
+    core_competencies_desc = {
+        "자기관리 역량": "자아정체성과 자신감을 가지고 자신의 삶과 진로에 필요한 기초 능력과 자질을 갖추어 자기주도적으로 살아갈 수 있는 능력입니다.",
+        "지식정보처리 역량": "문제를 합리적으로 해결하기 위하여 다양한 영역의 지식과 정보를 처리하고 활용할 수 있는 능력입니다.",
+        "창의적 사고 역량": "폭넓은 기초 지식을 바탕으로 다양한 전문 분야의 지식, 기술, 경험을 융합적으로 활용하여 새로운 것을 창출하는 능력입니다.",
+        "심미적 감성 역량": "인간에 대한 공감적 이해와 문화적 감수성을 바탕으로 삶의 의미와 가치를 발견하고 향유하는 능력입니다.",
+        "협력적 소통 역량": "다양한 집단 속에서 서로 존중하고 협력하며 문제를 해결해 나가는 능력입니다.",
+        "공동체 역량": "지역, 국가, 세계 공동체의 구성원에게 요구되는 가치와 태도를 가지고 공동체 발전에 적극적으로 참여하는 능력입니다."
+    }
+
+    sel_competencies_desc = {
+        "자기 인식 역량": "자신의 감정, 생각, 가치를 정확히 이해하고, 자신의 강점과 한계를 인식하는 능력입니다.",
+        "자기 관리 역량": "스트레스 상황에서 감정과 행동을 효과적으로 조절하고, 목표 설정을 통해 스스로 동기를 부여하는 능력입니다.",
+        "사회적 인식 역량": "타인의 관점을 이해하고 공감하며, 다양한 배경을 가진 사람들을 존중하고, 사회적 규범을 이해하는 능력입니다.",
+        "관계 기술 역량": "타인과 긍정적이고 건강한 관계를 형성 및 유지하며, 명확한 의사소통, 협력, 갈등 해결 능력을 포함합니다.",
+        "책임 있는 의사결정 역량": "윤리적 기준, 안전, 사회적 규범을 고려하여 건설적인 선택을 하고, 자신의 행동 결과에 대해 책임지는 능력입니다."
+    }
+
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("💡 핵심역량")
-        core_competencies = ["자기관리 역량", "지식정보처리 역량", "창의적 사고 역량", "심미적 감성 역량", "협력적 소통 역량", "공동체 역량"]
-        st.session_state.selected_core_competencies = [comp for comp in core_competencies if st.checkbox(comp, value=comp in st.session_state.selected_core_competencies, key=f"core_{comp}")]
+        st.session_state.selected_core_competencies = [
+            comp for comp, desc in core_competencies_desc.items() 
+            if st.checkbox(comp, value=comp in st.session_state.selected_core_competencies, key=f"core_{comp}", help=desc)
+        ]
     with col2:
         st.subheader("🌱 사회정서 역량")
-        sel_competencies = ["자기 인식 역량", "자기 관리 역량", "사회적 인식 역량", "관계 기술 역량", "책임 있는 의사결정 역량"]
-        st.session_state.selected_sel_competencies = [comp for comp in sel_competencies if st.checkbox(comp, value=comp in st.session_state.selected_sel_competencies, key=f"sel_{comp}")]
+        st.session_state.selected_sel_competencies = [
+            comp for comp, desc in sel_competencies_desc.items()
+            if st.checkbox(comp, value=comp in st.session_state.selected_sel_competencies, key=f"sel_{comp}", help=desc)
+        ]
 
 def render_step3():
     """STEP 3 페이지를 렌더링합니다."""
     st.header("🚗 STEP 3. 탐구 여정 디자인하기")
-    st.caption("학생들이 경험할 구체적인 탐구, 피드백, 성찰 활동을 계획합니다.")
+    st.info("💡 **Tip:** 프로젝트의 '과정'을 구체적으로 그리는 단계입니다. 이전 단계에서 설정한 목표와 역량이 실제 활동 속에서 어떻게 구현될지 상상하며 계획해보세요.")
     
     st.subheader("지속적 탐구 (Sustained Inquiry)")
     st.markdown("학생들은 어떤 과정을 통해 깊이 있는 탐구를 진행하게 될까요?")
     with st.expander("🤖 AI로 '지속적 탐구' 과정 제안받기", expanded=True):
-        inquiry_tags = ["문제 발견 단계", "질문 만들기", "실태 조사 (설문, 관찰)", "전문가 인터뷰", "자료 및 문헌 조사", "해결 방안 탐색", "시제품/캠페인 기획", "산출물 제작", "수정 및 보완"]
+        inquiry_tags = [
+            "질문 만들기", "실태 조사 (설문, 관찰)", 
+            "자료 및 문헌 조사", "전문가 인터뷰", "토의/토론 활동", 
+            "찬반 토론 및 입장 정하기", "해결 방안 탐색", "디자인 시안 제작",
+            "시제품/캠페인 기획", "산출물 제작", "수정 및 보완", "결과 발표 및 공유"
+        ]
         selected_tags = st.multiselect("주요 활동을 선택하여 탐구의 뼈대를 만들어보세요.", options=inquiry_tags)
         
         if st.button("선택한 활동으로 AI 과정 구체화하기"):
@@ -337,8 +365,7 @@ def render_step3():
 def render_step4():
     """STEP 4 페이지를 렌더링합니다."""
     st.header("✨ STEP 4. 최종 설계도 확인 및 내보내기")
-    st.caption("입력된 모든 내용을 하나의 문서로 통합하여 확인하고, 저장 및 공유할 수 있습니다.")
-    st.markdown("---")
+    st.info("💡 **Tip:** 완성된 설계도를 최종 검토하는 단계입니다. AI 피드백을 통해 부족한 부분을 보완하고, 엑셀 파일로 저장하여 수업에 활용하세요.")
     
     final_data = {
         "🎯 탐구 질문": "project_title", "📢 최종 결과물 공개": "public_product",
