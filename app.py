@@ -75,7 +75,7 @@ def call_gemini(prompt):
     if not GEMINI_API_KEY:
         return "⚠️ AI 기능 비활성화: Gemini API 키가 설정되지 않았습니다."
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         with st.spinner("🚀 Gemini AI가 선생님의 아이디어를 확장하고 있어요..."):
             response = model.generate_content(prompt)
             return response.text
